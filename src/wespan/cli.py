@@ -6,20 +6,21 @@ import sys
 from .settings import DBUS_IFACE, DBUS_NAME, DBUS_PATH
 
 HELP = """\
-commandes :
-  daemon                 lance le service (démarrage de session)
-  settings [--tray]      ouvre l'application de réglages (--tray : réduite dans la zone de notification)
-  status                 état (JSON)
-  set <id>               change de fond (id Workshop)
-  list                   fonds disponibles (JSON)
+commands:
+  daemon                 run the service (started with your session)
+  settings [--tray]      open the settings app (--tray: start hidden in the system tray)
+  status                 current state (JSON)
+  set <id>               switch wallpaper (Workshop id)
+  list                   available wallpapers (JSON)
   mute | unmute | togglemute
   volume <0-150>
   pause | resume | togglepause
-  offset <écran> <x> <y> décale l'image d'un écran (ex. HDMI-A-1 0 40)
-  restart                relance Wallpaper Engine
-  doctor                 diagnostic de l'installation
-  setup [--steam]        installe/répare l'intégration KDE (--steam : option de lancement, ferme Steam)
-  quit                   arrête le service
+  offset <screen> <x> <y>  shift one screen's part of the picture (e.g. HDMI-A-1 0 40)
+  restart                restart Wallpaper Engine
+  doctor                 check the installation
+  setup [--steam]        install/repair the KDE integration (--steam: also set the Steam launch option; closes Steam)
+  quit                   stop the service
+  i18n-template [file]   write the list of strings to translate (see src/wespan/i18n.py)
 """
 
 
@@ -30,12 +31,12 @@ def iface():
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="wespan", description="WE Span : Wallpaper Engine comme fond d'écran Plasma",
+    ap = argparse.ArgumentParser(prog="wespan", description="WE Span: Wallpaper Engine as a real KDE Plasma wallpaper",
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=HELP)
     ap.add_argument("command", nargs="?", default="settings")
     ap.add_argument("args", nargs="*")
     ap.add_argument("--steam", action="store_true")
-    ap.add_argument("--tray", action="store_true", help="settings : démarrer réduit dans la zone de notification")
+    ap.add_argument("--tray", action="store_true", help="settings: start hidden in the system tray")
     a = ap.parse_args(argv)
     c, args = a.command, a.args
 
@@ -45,12 +46,24 @@ def main(argv=None):
     if c == "settings":
         from .gui.app import main as gmain
         return gmain(tray_start=a.tray)
+    if c == "i18n-template":
+        import os, tempfile
+        out = os.path.abspath(args[0] if args else "wespan-template.json")
+        os.environ.update({"WESPAN_I18N_DUMP": out, "WESPAN_LANG": "_template",
+                           "WESPAN_SHOT_DIR": tempfile.mkdtemp(prefix="wespan-i18n-"),
+                           "QT_QPA_PLATFORM": "offscreen", "QT_QUICK_BACKEND": "software"})
+        from .gui.app import main as gmain
+        gmain()
+        print(f"{out}: " + str(len(__import__("json").load(open(out))) - 1) + " strings")
+        return 0
     if c == "doctor":
         from .setup import doctor
+        from .settings import language, load
+        key = "label_fr" if language(load()) == "fr" else "label_en"
         ok = True
         for d in doctor():
             ok &= d["ok"]
-            print(("✔ " if d["ok"] else "✘ ") + d["label_fr"] + (f"  — {d['detail']}" if d.get("detail") else ""))
+            print(("✔ " if d["ok"] else "✘ ") + d[key] + (f"  — {d['detail']}" if d.get("detail") else ""))
         return 0 if ok else 1
     if c == "setup":
         from .setup import setup
@@ -60,7 +73,7 @@ def main(argv=None):
     try:
         d = iface()
     except Exception:
-        print("Le service WE Span ne tourne pas (lancez : wespan daemon)", file=sys.stderr)
+        print("The WE Span service is not running (start it with: wespan daemon)", file=sys.stderr)
         return 2
     if c == "status":
         print(json.dumps(json.loads(d.GetState()), indent=1, ensure_ascii=False))

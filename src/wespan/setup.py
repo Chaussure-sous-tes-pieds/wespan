@@ -53,24 +53,24 @@ def install_packages(log=print) -> bool:
     kwin_changed = False
     sd = share_dir()
     if not sd:
-        log("✘ fichiers de WE Span introuvables")
+        log("✘ WE Span files not found")
         return False
     user = Path.home() / ".local/share"
     if not _system_package("kwin/scripts", KWIN_SCRIPT_ID) and \
             not _same_tree(sd / "kwin" / KWIN_SCRIPT_ID, user / "kwin/scripts" / KWIN_SCRIPT_ID):
         ok = desktop.install_package("KWin/Script", sd / "kwin" / KWIN_SCRIPT_ID)
         kwin_changed = ok
-        log(("✔" if ok else "✘") + " script KWin installé")
+        log(("✔" if ok else "✘") + " KWin script installed")
     if not _system_package("plasma/wallpapers", PLUGIN_ID) and \
             not _same_tree(sd / "plasma" / PLUGIN_ID, user / "plasma/wallpapers" / PLUGIN_ID):
         upgrade = desktop.plugin_installed()
         ok = desktop.install_package("Plasma/Wallpaper", sd / "plasma" / PLUGIN_ID)
-        log(("✔" if ok else "✘") + " fond d'écran Plasma installé")
+        log(("✔" if ok else "✘") + " Plasma wallpaper plugin installed")
         if ok and upgrade and PLUGIN_ID in desktop.plasma_plugins():
             # plasmashell garde le QML compilé en mémoire : redémarrage pour charger la mise à jour
             subprocess.run(["systemctl", "--user", "restart", "plasma-plasmashell"], timeout=30)
             time.sleep(6)
-            log("✔ Plasma rechargé")
+            log("✔ Plasma reloaded")
     return kwin_changed
 
 
@@ -78,11 +78,11 @@ def fix_steam_option(log=print) -> bool:
     """Steam réécrit localconfig.vdf en quittant : on le ferme, on modifie, on le relance."""
     info = steam.SteamInfo()
     if not info.root:
-        log("✘ Steam introuvable")
+        log("✘ Steam not found")
         return False
     was_running = steam.steam_running()
     if was_running:
-        log("… fermeture de Steam")
+        log("… closing Steam")
         subprocess.run(["steam", "-shutdown"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(90):
             if not steam.steam_running():
@@ -90,14 +90,14 @@ def fix_steam_option(log=print) -> bool:
             time.sleep(1)
         time.sleep(3)
         if steam.steam_running():
-            log("✘ Steam ne s'est pas fermé")
+            log("✘ Steam did not close")
             return False
     n = steam.set_launch_option(info)
-    log(f"✔ option de lancement ajoutée ({n} compte(s))" if n else "✔ option de lancement déjà présente")
+    log(f"✔ launch option added ({n} account(s))" if n else "✔ launch option already set")
     if was_running:
         subprocess.Popen(["steam", "-silent"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
-        log("… Steam relancé")
+        log("… Steam restarted")
     return True
 
 
@@ -105,27 +105,27 @@ def setup(steam_option: bool = False, log=print) -> None:
     kwin_changed = install_packages(log)
     if kwin_changed or not (desktop.kwin_script_enabled() and desktop.kwin_script_loaded()):
         desktop.enable_kwin_script(True)
-    log("✔ script KWin actif")
+    log("✔ KWin script running")
     desktop.set_autostart(True, exe())
     from .settings import load
     if load().get("tray_icon", True) and not desktop.AUTOSTART_TRAY.exists():
         desktop.set_tray_autostart(True, exe())
-    log("✔ démarrage automatique activé")
+    log("✔ start with the session: enabled")
     info = steam.SteamInfo()
     if info.compatdata and info.library and not steam.drive_s_ok(info):
         steam.fix_drive_s(info)
-        log("✔ lecteur S: du préfixe réparé")
+        log("✔ Wine prefix S: drive repaired")
     if not service_running():
         start_service()
-        log("✔ service démarré")
+        log("✔ service started")
     time.sleep(2)
     if not desktop.plasma_active():
         desktop.apply_plasma(True)
-    log("✔ fond d'écran Plasma actif sur tous les écrans")
+    log("✔ WE Span wallpaper active on every screen")
     if steam_option:
         fix_steam_option(log)
     elif not steam.launch_option_ok(info):
-        log("! option de lancement Steam manquante : relancez avec --steam (Steam sera fermé puis relancé)")
+        log("! Steam launch option missing: run again with --steam (Steam will be closed and restarted)")
 
 
 def fix(what: str, log=print) -> None:

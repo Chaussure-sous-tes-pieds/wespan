@@ -6,7 +6,7 @@ import org.kde.kirigami as Kirigami
 Kirigami.ScrollablePage {
     id: page
     title: t("Écrans", "Screens")
-    function t(fr, en) { return backend.lang === "fr" ? fr : en }
+    function t(fr, en) { return backend.lang === "fr" ? fr : backend.lang === "en" ? en : backend.translate(en) }
     readonly property var st: backend.state
     readonly property var screens: st.screens || []
     property var offsets: ({})   // copie locale : l'aperçu suit la souris sans attendre le service

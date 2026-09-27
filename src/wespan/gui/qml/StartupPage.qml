@@ -6,7 +6,7 @@ import org.kde.kirigami as Kirigami
 Kirigami.ScrollablePage {
     id: page
     title: t("Démarrage", "Startup")
-    function t(fr, en) { return backend.lang === "fr" ? fr : en }
+    function t(fr, en) { return backend.lang === "fr" ? fr : backend.lang === "en" ? en : backend.translate(en) }
     readonly property var cfg: backend.cfg
 
     Kirigami.FormLayout {

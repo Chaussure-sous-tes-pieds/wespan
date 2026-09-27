@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# WE Span — installation pour l'utilisateur courant (sans root).
-#   ./install.sh            installe / met à jour
-#   ./install.sh --steam    et règle l'option de lancement Steam de WE (Steam sera fermé puis relancé)
+# WE Span — install for the current user (no root needed).
+#   ./install.sh            install / update
+#   ./install.sh --steam    also set Wallpaper Engine's Steam launch option (Steam is closed and restarted)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -16,12 +16,12 @@ command -v qdbus6 >/dev/null || command -v qdbus-qt6 >/dev/null || command -v qd
 python3 -c 'import dbus, gi' 2>/dev/null || missing+=("python-dbus/python-gobject")
 python3 -c 'import PySide6' 2>/dev/null || missing+=("pyside6")
 if ((${#missing[@]})); then
-    echo "Manquant / missing : ${missing[*]}"
-    echo "Arch / CachyOS : sudo pacman -S --needed python-dbus python-gobject pyside6 kirigami wmctrl xorg-xprop libpulse qt6-tools"
+    echo "Missing: ${missing[*]}"
+    echo "Arch / CachyOS: sudo pacman -S --needed python-dbus python-gobject pyside6 kirigami wmctrl xorg-xprop libpulse qt6-tools"
     exit 1
 fi
 
-echo "→ fichiers dans $DEST"
+echo "→ files in $DEST"
 rm -rf "$DEST/lib"
 mkdir -p "$DEST/lib" "$BIN" "$SHARE/applications" "$SHARE/icons/hicolor/scalable/apps"
 cp -r src/wespan "$DEST/lib/"
@@ -38,12 +38,12 @@ cp data/wespan.desktop "$SHARE/applications/"
 cp data/wespan.svg "$SHARE/icons/hicolor/scalable/apps/"
 command -v update-desktop-database >/dev/null && update-desktop-database "$SHARE/applications" 2>/dev/null || true
 
-case ":$PATH:" in *":$BIN:"*) ;; *) echo "! $BIN n'est pas dans votre PATH" ;; esac
+case ":$PATH:" in *":$BIN:"*) ;; *) echo "! $BIN is not in your PATH" ;; esac
 
-# service déjà lancé : on le redémarre sur la nouvelle version
+# service already running: restart it on the new version
 "$BIN/wespan" quit >/dev/null 2>&1 && sleep 2 || true
 
-echo "→ intégration KDE"
+echo "→ KDE integration"
 "$BIN/wespan" setup ${1:-}
 echo
-echo "Terminé. Ouvrez « WE Span » depuis le menu des applications."
+echo "Done. Open “WE Span” from the application menu."

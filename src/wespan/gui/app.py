@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow  # noqa: F401 (type exact des fenêtres QML)
 
-from .. import __version__, desktop, settings as S
+from .. import __version__, desktop, i18n, settings as S
 from ..settings import DBUS_IFACE, DBUS_NAME, DBUS_PATH, LOG_FILE
 
 
@@ -30,7 +30,11 @@ class Backend(QObject):
         self._diag = []
         self._busy = ""
         self._iface = None
-        self._lang = S.language(S.load())
+        cfg = S.load()
+        self._lang = S.language(cfg)
+        self._chosen = bool(cfg.get("language_chosen"))
+        self._catalogs = i18n.catalogs()
+        self._dump = {} if os.environ.get("WESPAN_I18N_DUMP") else None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.poll)
         self._timer.start(1000)
@@ -60,8 +64,9 @@ class Backend(QObject):
         st = json.loads(raw) if raw else {}
         if st != self._state:
             self._state = st
-            if st.get("lang"):
+            if st.get("lang") and st["lang"] != self._lang and self._dump is None:
                 self._lang = st["lang"]
+                self.langChanged.emit()
             self.stateChanged.emit()
 
     @Property("QVariantMap", notify=stateChanged)
@@ -76,9 +81,49 @@ class Backend(QObject):
     def cfg(self):
         return self._state.get("settings", {})
 
-    @Property(str, notify=stateChanged)
+    langChanged = Signal()
+
+    @Property(str, notify=langChanged)
     def lang(self):
         return self._lang
+
+    @Property("QVariantList", constant=True)
+    def languages(self):
+        return i18n.languages()
+
+    @Property(bool, notify=langChanged)
+    def languageChosen(self):
+        return self._chosen
+
+    @Slot(str)
+    def setLanguage(self, code):
+        """code : "auto" ou un code de langue. Appliqué tout de suite, et mémorisé."""
+        cfg = S.load()
+        cfg["language"], cfg["language_chosen"] = code, True
+        S.save(cfg)                                    # (le service peut être arrêté)
+        self._call("SetSetting", "language", json.dumps(code))
+        self._call("SetSetting", "language_chosen", "true")
+        self._chosen = True
+        self._lang = i18n.resolve(code)
+        self.langChanged.emit()
+        self.poll()
+
+    @Slot(str, result=str)
+    def translate(self, en):
+        """Langues autres que fr/en : texte anglais -> traduction du catalogue (sinon anglais)."""
+        if self._dump is not None:
+            self._dump[en] = ""
+        return self._catalogs.get(self._lang, {}).get(en) or en
+
+    def t(self, fr, en):
+        return fr if self._lang == "fr" else en if self._lang == "en" else self.translate(en)
+
+    def write_i18n_template(self):
+        path = os.environ.get("WESPAN_I18N_DUMP")
+        if path and self._dump is not None:
+            data = {"_name": "Language name (in that language)"}
+            data.update(dict(sorted(self._dump.items())))
+            Path(path).write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 
     @Property(str, constant=True)
     def version(self):
@@ -285,11 +330,12 @@ class Tray(QObject):
         self.icon.activated.connect(self.on_activated)
         backend.stateChanged.connect(self.refresh)
         backend.trayChanged.connect(self.apply)
+        backend.langChanged.connect(self.refresh)
         self.refresh()
         self.apply()
 
     def t(self, fr, en):
-        return fr if self.b.lang == "fr" else en
+        return self.b.t(fr, en)
 
     def apply(self):
         on = self.b.trayEnabled
@@ -355,6 +401,7 @@ def main(tray_start: bool = False):
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("startHidden", bool(tray_start))
+    engine.rootContext().setContextProperty("shotMode", bool(shots))
     engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Main.qml")))
     if not engine.rootObjects():
         return 1
@@ -372,6 +419,7 @@ def main(tray_start: bool = False):
     if shots:
         _screenshots(win, shots)
     rc = app.exec()
+    backend.write_i18n_template()
     del tray
     return rc
 
@@ -386,7 +434,9 @@ def _screenshots(win, out_dir):
         if i > 0:
             win.grabWindow().save(str(Path(out_dir) / f"{i:02d}-{pages[i - 1]}.png"))
         if i == len(pages):
-            QTimer.singleShot(1500, QApplication.quit)
+            QMetaObject.invokeMethod(win, "openLangDialog")
+            QTimer.singleShot(1500, lambda: (win.grabWindow().save(str(Path(out_dir) / "09-Language.png")),
+                                             QApplication.quit()))
             return
         QMetaObject.invokeMethod(win, "showPage", Q_ARG("QVariant", pages[i]))
         QTimer.singleShot(2500, lambda: step(i + 1))

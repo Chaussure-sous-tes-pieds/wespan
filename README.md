@@ -81,6 +81,16 @@ Plasma knows where your screens are in pixels, not physically. In *Screens* you 
 of the picture until the horizon lines up; a live preview shows the result and zoom adapts automatically so
 no black bars appear.
 
+## Languages
+
+English and French are built in. On first launch the app asks which one you want; you can switch at any time
+from the language selector at the bottom of the side menu.
+
+**Translating WE Span:** copy `src/wespan/i18n/_template.json` to `src/wespan/i18n/<code>.json` (e.g. `de.json`),
+set `"_name"` to the language's own name (e.g. `"Deutsch"`) and fill in the translations. Empty entries fall back
+to English. It appears in the language selector right away; pull requests welcome! To refresh the template
+after UI changes: `wespan i18n-template src/wespan/i18n/_template.json`.
+
 ## Troubleshooting
 
 Open the app → **Diagnostics**: every check has a *Fix* button, and the log can be copied for bug reports
@@ -167,6 +177,7 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
 - Icône dans la zone de notification (optionnelle, activée par défaut) : clic pour afficher/masquer la
   fenêtre, menu pause/son. Le fond continue de tourner même application fermée.
 - Clic droit sur le bureau : couper/remettre le son, pause/reprise, réglages.
+- Langue : français ou anglais, proposée au premier lancement et modifiable en bas du menu latéral.
 - Ligne de commande : `wespan status`, `wespan set <id>`, `wespan mute`, `wespan volume 40`, `wespan pause`,
   `wespan offset HDMI-A-1 0 40`, `wespan restart`, `wespan doctor`.
 

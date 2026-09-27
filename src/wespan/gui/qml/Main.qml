@@ -11,7 +11,7 @@ Kirigami.ApplicationWindow {
     minimumWidth: Kirigami.Units.gridUnit * 34
     minimumHeight: Kirigami.Units.gridUnit * 26
 
-    function t(fr, en) { return backend.lang === "fr" ? fr : en }
+    function t(fr, en) { return backend.lang === "fr" ? fr : backend.lang === "en" ? en : backend.translate(en) }
     readonly property var st: backend.state
     readonly property var cfg: backend.cfg
     property string currentPage: "Wallpapers"
@@ -78,9 +78,93 @@ Kirigami.ApplicationWindow {
             Kirigami.Action { text: win.t("Diagnostic", "Diagnostics"); icon.name: "tools-report-bug"; checked: win.currentPage === "Diagnostic"; onTriggered: win.showPage("Diagnostic") },
             Kirigami.Action { text: win.t("À propos", "About"); icon.name: "help-about"; checked: win.currentPage === "About"; onTriggered: win.showPage("About") }
         ]
+
+        // langue : toujours visible, en bas du menu latéral
+        content: [
+            Kirigami.Separator { Layout.fillWidth: true },
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: Kirigami.Units.smallSpacing
+                visible: !drawer.collapsed
+                Kirigami.Icon {
+                    source: "preferences-desktop-locale"
+                    implicitWidth: Kirigami.Units.iconSizes.smallMedium; implicitHeight: implicitWidth
+                }
+                QQC2.ComboBox {
+                    id: langBox
+                    Layout.fillWidth: true
+                    model: backend.languages
+                    textRole: "name"; valueRole: "code"
+                    currentIndex: {
+                        const l = backend.languages;
+                        for (let i = 0; i < l.length; i++) if (l[i].code === backend.lang) return i;
+                        return 0;
+                    }
+                    onActivated: backend.setLanguage(currentValue)
+                    QQC2.ToolTip.text: "Language · Langue"; QQC2.ToolTip.visible: hovered; QQC2.ToolTip.delay: 500
+                }
+            },
+            QQC2.ToolButton {
+                visible: drawer.collapsed
+                Layout.alignment: Qt.AlignHCenter
+                icon.name: "preferences-desktop-locale"
+                display: QQC2.AbstractButton.IconOnly
+                text: "Language · Langue"
+                QQC2.ToolTip.text: text; QQC2.ToolTip.visible: hovered
+                onClicked: langDialog.open()
+            }
+        ]
     }
 
-    Component.onCompleted: showPage("Wallpapers")
+    // premier lancement : choix de la langue avant tout
+    Kirigami.Dialog {
+        id: langDialog
+        title: "Language · Langue"
+        standardButtons: Kirigami.Dialog.NoButton
+        showCloseButton: backend.languageChosen
+        closePolicy: backend.languageChosen ? QQC2.Popup.CloseOnEscape | QQC2.Popup.CloseOnPressOutside : QQC2.Popup.NoAutoClose
+        padding: Kirigami.Units.largeSpacing * 2
+        preferredWidth: Kirigami.Units.gridUnit * 22
+        ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            Kirigami.Icon {
+                Layout.alignment: Qt.AlignHCenter
+                source: "preferences-desktop-locale"
+                implicitWidth: Kirigami.Units.iconSizes.huge; implicitHeight: implicitWidth
+            }
+            Kirigami.Heading {
+                Layout.fillWidth: true
+                level: 2
+                horizontalAlignment: Text.AlignHCenter
+                text: "Choose your language\nChoisissez votre langue"
+            }
+            Repeater {
+                model: backend.languages
+                delegate: QQC2.Button {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    text: modelData.name
+                    highlighted: modelData.code === backend.lang
+                    onClicked: { backend.setLanguage(modelData.code); langDialog.close(); }
+                }
+            }
+            QQC2.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                horizontalAlignment: Text.AlignHCenter
+                opacity: 0.7
+                text: "You can change it anytime at the bottom of the side menu.\n"
+                    + "Modifiable à tout moment en bas du menu latéral."
+            }
+        }
+    }
+    function openLangDialog() { langDialog.open() }
+    function askLanguageIfNeeded() {
+        if (!backend.languageChosen && win.visible && !shotMode) langDialog.open();
+    }
+    onVisibleChanged: askLanguageIfNeeded()
+
+    Component.onCompleted: { showPage("Wallpapers"); Qt.callLater(askLanguageIfNeeded); }
     visible: typeof startHidden === "undefined" || !startHidden
 
     // avec l'icône de notification, fermer la fenêtre la réduit (le fond continue de toute façon)

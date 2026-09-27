@@ -55,7 +55,7 @@ def freeze(on: bool) -> bool:
 
 
 def launch_via_steam() -> None:
-    log.info("lancement de Wallpaper Engine via Steam")
+    log.info("starting Wallpaper Engine through Steam")
     subprocess.Popen(["steam", "-silent", f"steam://rungameid/{WE_APPID}"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
@@ -96,7 +96,7 @@ def control(info: SteamInfo, *args: str, timeout: float = 45) -> bool:
     Les appels doivent être faits un par un (le Worker du service s'en charge)."""
     global last_control
     if not info.ok:
-        log.error("Steam/Proton/WE introuvable")
+        log.error("Steam/Proton/Wallpaper Engine not found")
         return False
     freeze(False)  # un processus gelé ne répondrait pas
     last_control = __import__("time").time()
@@ -106,10 +106,10 @@ def control(info: SteamInfo, *args: str, timeout: float = 45) -> bool:
                            stderr=subprocess.PIPE, timeout=timeout, text=True)
         last_control = __import__("time").time()
         if r.returncode:
-            log.warning("control %s → code %s : %s", args[0], r.returncode, r.stderr[-400:])
+            log.warning("control %s -> exit code %s: %s", args[0], r.returncode, r.stderr[-400:])
         return r.returncode == 0
     except subprocess.TimeoutExpired:
-        log.warning("control %s : délai dépassé", args[0])
+        log.warning("control %s: timed out", args[0])
         return False
 
 

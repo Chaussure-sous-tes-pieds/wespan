@@ -6,7 +6,7 @@ import org.kde.kirigami as Kirigami
 Kirigami.ScrollablePage {
     id: page
     title: t("Fonds d'écran", "Wallpapers")
-    function t(fr, en) { return backend.lang === "fr" ? fr : en }
+    function t(fr, en) { return backend.lang === "fr" ? fr : backend.lang === "en" ? en : backend.translate(en) }
 
     property string search: ""
     property string typeFilter: ""

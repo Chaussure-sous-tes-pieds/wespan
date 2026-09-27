@@ -44,6 +44,7 @@ DEFAULTS = {
     # zone réellement rendue par WE pour une taille de fenêtre donnée ("WxH": [w, h])
     "content": {},
     "language": "auto",
+    "language_chosen": False,        # la fenêtre « choisissez votre langue » a été vue
     "tray_icon": True,
     "native_video": True,            # fonds vidéo lus par Plasma (décodage GPU) plutôt que par WE/Proton               # icône dans la zone de notification (fermer la fenêtre = la réduire)
     "proton": "",                    # chemin du script proton (auto-détecté si vide)
@@ -86,9 +87,5 @@ def _migrate_v1(data: dict) -> None:
 
 
 def language(data: dict) -> str:
-    if data.get("language") in ("fr", "en"):
-        return data["language"]
-    for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG", "LC_TIME", "LC_ADDRESS"):
-        if os.environ.get(var, "").lower().startswith("fr"):
-            return "fr"
-    return "en"
+    from .i18n import resolve
+    return resolve(data.get("language", "auto"))

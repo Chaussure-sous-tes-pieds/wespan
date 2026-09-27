@@ -6,7 +6,7 @@ import org.kde.kirigami as Kirigami
 Kirigami.ScrollablePage {
     id: page
     title: t("À propos", "About")
-    function t(fr, en) { return backend.lang === "fr" ? fr : en }
+    function t(fr, en) { return backend.lang === "fr" ? fr : backend.lang === "en" ? en : backend.translate(en) }
 
     ColumnLayout {
         spacing: Kirigami.Units.largeSpacing

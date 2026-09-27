@@ -44,7 +44,7 @@ class Worker(threading.Thread):
             try:
                 res = fn()
             except Exception:
-                log.exception("tâche %s", name)
+                log.exception("task %s", name)
                 res = None
             self.busy = False
             if done:
@@ -97,11 +97,11 @@ class Daemon(dbus.service.Object):
     def startup(self):
         if not self.info.ok:
             self.message = "steam_missing"
-            log.error("Steam / Wallpaper Engine / Proton introuvable")
+            log.error("Steam / Wallpaper Engine / Proton not found")
         if self.info.compatdata and self.info.library and not steam.drive_s_ok(self.info):
             try:
                 steam.fix_drive_s(self.info)
-                log.info("lecteur S: du préfixe recréé")
+                log.info("re-created the prefix S: drive")
             except OSError:
                 pass
         if not self.cfg["wallpaper"]:
@@ -146,7 +146,7 @@ class Daemon(dbus.service.Object):
         self.pause_tick()
 
     def _on_show_desktop(self, showing):
-        log.info("afficher le bureau : %s", bool(showing))
+        log.info("show desktop: %s", bool(showing))
         self.showing_desktop = bool(showing)
         self.pause_tick()
 
@@ -260,7 +260,7 @@ class Daemon(dbus.service.Object):
                     self.window_size = desktop.rule_size()   # fenêtre créée avant notre démarrage
                 if self.window_size and self.window_size != (w, h) and not self.worker.busy \
                         and now - self.layout_changed > LAYOUT_SETTLE:
-                    log.info("taille de rendu %s → %s : recréation de la fenêtre", self.window_size, (w, h))
+                    log.info("render size %s -> %s: re-creating the window", self.window_size, (w, h))
                     self.open_current(recreate=True)
             idx = engine.sink_input() if now - self.last_audio_check > 10 or self.sink_idx is None else self.sink_idx
             if idx is not None:
@@ -318,14 +318,14 @@ class Daemon(dbus.service.Object):
         def done(ok):
             self.last_open = time.time()
             if not ok:
-                log.warning("ouverture du fond %s échouée", self.cfg["wallpaper"])
+                log.warning("failed to open wallpaper %s", self.cfg["wallpaper"])
                 self.tick()
                 return
             self.title = new_title
             self.window_size = (w, h)
             self.sink_idx = None
             self.grace_until = time.time() + GRACE_S
-            log.info("fond %s ouvert en %dx%d (%s)", self.cfg["wallpaper"], w, h, new_title)
+            log.info("wallpaper %s opened at %dx%d (%s)", self.cfg["wallpaper"], w, h, new_title)
             self.tick()
             self.pause_tick(force=True)
             if old_title and old_title != new_title:
@@ -387,7 +387,7 @@ class Daemon(dbus.service.Object):
                 else:
                     self.video_epoch = now - (self.video_paused_pos or 0)
                     self.video_paused_pos = None
-                log.info("%s vidéo (%s)", "pause" if want else "lecture", reason or "-")
+                log.info("video %s (%s)", "paused" if want else "playing", reason or "-")
             self.pause_reason = reason if want else ""
             if not want:
                 self.want_since = 0
@@ -408,7 +408,7 @@ class Daemon(dbus.service.Object):
                 return True
             if not self.worker.busy and engine.we_pid() and engine.freeze(want):
                 if want != self.paused:
-                    log.info("%s (%s)", "pause" if want else "lecture", reason or "-")
+                    log.info("%s (%s)", "paused" if want else "playing", reason or "-")
                 self.paused = want
             self.pause_reason = reason if want else ""
             self.write_state()
@@ -489,7 +489,7 @@ class Daemon(dbus.service.Object):
         self.screens = scr
         if self.bbox()[2:] != old:
             self.layout_changed = time.time()
-            log.info("écrans : %s", ", ".join(f"{s['name']} {s['w']}x{s['h']}@{s['x']},{s['y']}" for s in scr))
+            log.info("screens: %s", ", ".join(f"{s['name']} {s['w']}x{s['h']}@{s['x']},{s['y']}" for s in scr))
         self.pause_tick()
         self.write_state()
 
@@ -544,7 +544,7 @@ class Daemon(dbus.service.Object):
             self.video_epoch, self.video_paused_pos = time.time(), None
             self.opened_wallpaper = str(wid)
             self.grace_until = time.time() + GRACE_S
-            log.info("fond %s : vidéo lue par Plasma", wid)
+            log.info("wallpaper %s: video played by Plasma", wid)
             self.pause_tick(force=True)
         elif engine.we_pid():
             self.open_current()
@@ -639,7 +639,7 @@ class Daemon(dbus.service.Object):
             return running
 
         def done(was_running):
-            log.info("limite de fps : %s", fps)
+            log.info("fps limit: %s", fps)
             self._relaunch()
         self.worker.submit("fps", job, done)
 
@@ -656,7 +656,7 @@ def main():
     DBusGMainLoop(set_as_default=True)
     bus = dbus.SessionBus()
     if bus.name_has_owner(DBUS_NAME):
-        print("WE Span tourne déjà.", file=sys.stderr)
+        print("WE Span is already running.", file=sys.stderr)
         return 0
     try:
         daemon = Daemon(bus)
@@ -669,7 +669,7 @@ def main():
         loop.quit()
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, stop)
-    log.info("service démarré (Steam : %s, Proton : %s)", daemon.info.root, daemon.info.proton)
+    log.info("service started (Steam: %s, Proton: %s)", daemon.info.root, daemon.info.proton)
     try:
         loop.run()
     finally:

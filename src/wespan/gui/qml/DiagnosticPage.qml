@@ -6,7 +6,7 @@ import org.kde.kirigami as Kirigami
 Kirigami.ScrollablePage {
     id: page
     title: t("Diagnostic", "Diagnostics")
-    function t(fr, en) { return backend.lang === "fr" ? fr : en }
+    function t(fr, en) { return backend.lang === "fr" ? fr : backend.lang === "en" ? en : backend.translate(en) }
     readonly property var problems: backend.diagnostics.filter(d => !d.ok)
     property string log: ""
     Component.onCompleted: { backend.refreshDiagnostics(); log = backend.logTail() }
@@ -58,7 +58,7 @@ Kirigami.ScrollablePage {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 0
-                    QQC2.Label { text: backend.lang === "fr" ? modelData.label_fr : modelData.label_en; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                    QQC2.Label { text: page.t(modelData.label_fr, modelData.label_en); Layout.fillWidth: true; wrapMode: Text.Wrap }
                     QQC2.Label {
                         visible: !!modelData.detail
                         text: modelData.detail || ""
