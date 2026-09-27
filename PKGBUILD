@@ -1,10 +1,10 @@
-# Maintainer: <you> <you@example.org>
+# Maintainer: Chaussure-sous-tes-pieds <299629219+Chaussure-sous-tes-pieds@users.noreply.github.com>
 pkgname=wespan-git
 pkgver=1.0.0
 pkgrel=1
 pkgdesc="Wallpaper Engine (Steam/Proton) as a real KDE Plasma wallpaper on Wayland, spanned across screens"
 arch=('any')
-url="https://github.com/<you>/wespan"
+url="https://github.com/Chaussure-sous-tes-pieds/wespan"
 license=('MIT')
 depends=('python' 'python-dbus' 'python-gobject' 'pyside6' 'kirigami' 'kpipewire' 'plasma-workspace'
          'kwin' 'wmctrl' 'xorg-xprop' 'libpulse' 'qt6-tools' 'kconfig' 'kpackage')

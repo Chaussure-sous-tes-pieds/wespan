@@ -36,7 +36,7 @@ menu, Show Desktop (Meta+D), multiple virtual desktops and activities.
 ## Install
 
 ```bash
-git clone https://github.com/<you>/wespan.git
+git clone https://github.com/Chaussure-sous-tes-pieds/wespan.git
 cd wespan
 ./install.sh --steam      # --steam: also adds the required Steam launch option (Steam is closed and reopened)
 ```
@@ -152,7 +152,7 @@ fps et le démarrage, avec une page **Diagnostic** qui répare en un clic.
 
 ```bash
 sudo pacman -S --needed python-dbus python-gobject pyside6 kirigami wmctrl xorg-xprop libpulse qt6-tools
-git clone https://github.com/<vous>/wespan.git && cd wespan
+git clone https://github.com/Chaussure-sous-tes-pieds/wespan.git && cd wespan
 ./install.sh --steam
 ```
 
