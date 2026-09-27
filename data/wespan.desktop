@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=WE Span
+GenericName=Wallpaper Engine for Plasma
+GenericName[fr]=Wallpaper Engine pour Plasma
+Comment=Wallpaper Engine as a real Plasma wallpaper, spanned across your screens
+Comment[fr]=Wallpaper Engine comme vrai fond d'écran Plasma, étendu sur vos écrans
+Exec=wespan settings
+Icon=wespan
+Categories=Settings;DesktopSettings;Qt;KDE;
+Keywords=wallpaper;engine;live;animated;fond;écran;
+StartupNotify=true

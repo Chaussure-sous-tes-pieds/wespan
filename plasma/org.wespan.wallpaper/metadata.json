@@ -1,0 +1,14 @@
+{
+    "KPackageStructure": "Plasma/Wallpaper",
+    "KPlugin": {
+        "Authors": [{ "Name": "WE Span contributors" }],
+        "Description": "Wallpaper Engine (Steam) as a real Plasma wallpaper, spanned across all screens",
+        "Description[fr]": "Wallpaper Engine (Steam) comme vrai fond d'écran Plasma, étendu sur tous les écrans",
+        "Icon": "preferences-desktop-wallpaper",
+        "Id": "org.wespan.wallpaper",
+        "License": "MIT",
+        "Name": "Wallpaper Engine (WE Span)",
+        "Version": "1.0"
+    },
+    "X-KDE-ParentApp": "org.kde.plasmashell"
+}

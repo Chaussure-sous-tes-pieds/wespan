@@ -1,0 +1,15 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Authors": [{ "Name": "WE Span contributors" }],
+        "Description": "Keeps the hidden Wallpaper Engine window in place and reports window occlusion to the WE Span service",
+        "EnabledByDefault": false,
+        "Icon": "preferences-desktop-wallpaper",
+        "Id": "wespan",
+        "License": "MIT",
+        "Name": "WE Span helper",
+        "Version": "1.0"
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js"
+}

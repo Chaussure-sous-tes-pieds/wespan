@@ -1,0 +1,9 @@
+post_install() {
+    echo ">>> WE Span : pour chaque utilisateur, lancez une fois « wespan setup --steam »"
+    echo ">>> (ou ouvrez l'application WE Span → Diagnostic → Tout réparer)."
+    echo ">>> WE Span: as each user, run 'wespan setup --steam' once"
+    echo ">>> (or open the WE Span app → Diagnostics → Fix everything)."
+}
+post_upgrade() {
+    echo ">>> WE Span : redémarrez le service (wespan quit ; wespan daemon) ou fermez/rouvrez la session."
+}

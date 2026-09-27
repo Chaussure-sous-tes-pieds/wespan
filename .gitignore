@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+/pkg/
+/src/wespan-*/
+*.pkg.tar.*
+COMPTE-RENDU-NUIT.md
