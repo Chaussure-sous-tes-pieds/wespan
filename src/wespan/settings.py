@@ -45,8 +45,8 @@ DEFAULTS = {
     "content": {},
     "language": "auto",
     "language_chosen": False,        # la fenêtre « choisissez votre langue » a été vue
-    "tray_icon": True,
-    "native_video": True,            # fonds vidéo lus par Plasma (décodage GPU) plutôt que par WE/Proton               # icône dans la zone de notification (fermer la fenêtre = la réduire)
+    "tray_icon": True,               # icône dans la zone de notification (fermer la fenêtre = la réduire)
+    "native_video": True,            # fonds vidéo lus par Plasma (décodage GPU) plutôt que par WE/Proton
     "proton": "",                    # chemin du script proton (auto-détecté si vide)
 }
 

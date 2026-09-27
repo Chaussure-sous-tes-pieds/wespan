@@ -5,9 +5,14 @@ cursor, widgets, auto-pause and sound control.**
 
 *[Version française plus bas](#français).*
 
-Wallpaper Engine (Steam, AppID 431960) runs fine under Proton, but its “set as wallpaper” mode relies on a
-Windows-only trick (WorkerW) and does nothing on Linux. The usual workaround — a borderless window kept below
-the others — hides your cursor, your desktop widgets and the desktop menu. WE Span does it differently:
+Wallpaper Engine (Steam, AppID 431960) runs under Proton, but its “set as wallpaper” mode relies on a
+Windows-only trick (WorkerW) and does nothing on Linux. Most people on Linux therefore use a **native
+reimplementation** of its renderer instead, such as [linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine)
+or [Waywallen](https://github.com/waywallen/waywallen) (formerly the Wallpaper Engine KDE plugin). They are much
+lighter, and if your wallpapers work with them, you should keep using them.
+
+WE Span takes the opposite trade-off: it runs **the real Wallpaper Engine** (under Proton) and turns its output
+into a Plasma wallpaper. Here is how:
 
 1. Wallpaper Engine renders into a **hidden, off-screen window** (`-playInWindow`).
 2. A **Plasma wallpaper plugin** shows that window's **live video stream** (KWin screencast through PipeWire,
@@ -22,6 +27,23 @@ the others — hides your cursor, your desktop widgets and the desktop menu. WE 
 
 Because the result *is* the Plasma wallpaper, everything else keeps working: cursor, widgets, right-click
 menu, Show Desktop (Meta+D), multiple virtual desktops and activities.
+
+## Should you use it?
+
+Use a native renderer (linux-wallpaperengine, Waywallen) if your wallpapers render correctly with it: it uses
+far less RAM and CPU.
+
+WE Span is for when:
+- some scene wallpapers don't render (or not correctly) with the native reimplementations: here it's Wallpaper
+  Engine itself doing the rendering, so scenes look like they do on Windows;
+- you want **one wallpaper spanned across monitors of different sizes and orientations** (e.g. 1440p + portrait
+  1080p), with the horizon lined up.
+
+What it costs:
+- **overhead**: for scenes, the full Wallpaper Engine + Proton runs in the background (several times the RAM of a
+  native renderer). Video wallpapers are played by Plasma itself (GPU decoding), which is lighter;
+- **one picture spanned over all screens**: a different wallpaper per monitor isn't supported yet;
+- Steam has to be running.
 
 ## Requirements
 
@@ -145,8 +167,8 @@ License: MIT. Not affiliated with Wallpaper Engine or Valve.
 curseur, widgets, pause automatique et contrôle du son.**
 
 Sous Linux, le mode « définir comme fond d'écran » de Wallpaper Engine ne fonctionne pas (il dépend d'une
-astuce propre à Windows). Le contournement habituel — une fenêtre sans bordure maintenue sous les autres —
-masque le curseur, les widgets et le menu du bureau. WE Span procède autrement : Wallpaper Engine rend dans une
+astuce propre à Windows). La plupart des gens utilisent donc un moteur natif (linux-wallpaperengine, Waywallen),
+bien plus léger : si vos fonds marchent avec, gardez-le. WE Span fait le choix inverse : Wallpaper Engine rend dans une
 **fenêtre cachée hors écran**, et un **fond d'écran Plasma** affiche le **flux vidéo en direct** de cette
 fenêtre (PipeWire, comme les miniatures de la barre des tâches). Chaque écran en montre sa portion : l'image
 est continue d'un écran à l'autre, écrans verticaux et hauteurs différentes compris. C'est un vrai fond Plasma,
