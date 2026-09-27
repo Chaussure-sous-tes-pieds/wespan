@@ -130,8 +130,33 @@ WallpaperItem {
     // --- fonds vidéo natifs ----------------------------------------------------------------
     readonly property bool videoMode: st.mode === "video" && !!st.video
     readonly property string videoSource: videoMode ? "file://" + st.video.path : ""
-    readonly property bool videoShowing: videoMode && player.mediaStatus === MediaPlayer.BufferedMedia
-                                          || videoMode && player.playbackState === MediaPlayer.PausedState
+    // une vraie image est arrivée depuis le (re)chargement : l'aperçu flou peut disparaître
+    property double lastFrame: 0
+    property double loadStart: 0
+    readonly property bool videoShowing: videoMode && lastFrame > loadStart
+    Connections {
+        target: videoOut.videoSink
+        function onVideoFrameChanged() { root.lastFrame = Date.now(); }
+    }
+    onVideoSourceChanged: { loadStart = Date.now(); lastFrame = 0; }
+    // Lecteur bloqué (arrive parfois quand la vidéo change pendant que ce bureau est recouvert) :
+    // aucune image depuis 4 s alors qu'il devrait jouer => on recharge la vidéo.
+    function checkStall() {
+        if (!videoMode) return;
+        const paused = st.video.pausedPos !== null && st.video.pausedPos !== undefined;
+        if (paused) return;
+        const since = Date.now() - Math.max(lastFrame, loadStart);
+        if (since > 4000) {
+            console.warn("WE Span: lecteur vidéo bloqué sur", Screen.name, "- rechargement");
+            loadStart = Date.now();
+            lastFrame = 0;
+            player.stop();
+            player.source = "";
+            player.source = Qt.binding(() => root.videoSource);
+            player.play();
+            syncTimer.restart();
+        }
+    }
     MediaPlayer {
         id: player
         source: root.videoSource
@@ -178,10 +203,11 @@ WallpaperItem {
         }
     }
     Timer {
+        id: syncTimer
         interval: 1000
         running: root.videoMode
         repeat: true
-        onTriggered: root.syncVideo(false)
+        onTriggered: { root.syncVideo(false); root.checkStall(); }
     }
     onVideoModeChanged: if (!videoMode) player.stop()
 
