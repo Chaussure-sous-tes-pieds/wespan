@@ -25,7 +25,7 @@ Kirigami.ApplicationWindow {
 
     function pauseText() {
         if (!backend.serviceRunning) return t("Service arrêté", "Service stopped");
-        if (!st.running) return st.busy ? t("Démarrage de Wallpaper Engine…", "Starting Wallpaper Engine…")
+        if (!st.running && st.mode !== "video") return st.busy ? t("Démarrage de Wallpaper Engine…", "Starting Wallpaper Engine…")
                                         : t("Wallpaper Engine n'est pas lancé", "Wallpaper Engine is not running");
         if (!st.paused) return t("En lecture", "Playing");
         const r = st.pauseReason || "";
@@ -50,6 +50,7 @@ Kirigami.ApplicationWindow {
         function onToast(kind) {
             if (kind === "wallpaper") win.showPassiveNotification(win.t("Fond d'écran appliqué", "Wallpaper applied"));
             else if (kind === "restart") win.showPassiveNotification(win.t("Redémarrage de Wallpaper Engine…", "Restarting Wallpaper Engine…"));
+            else if (kind === "downloaded") win.showPassiveNotification(win.t("Nouveau fond téléchargé : il est dans la liste", "New wallpaper downloaded: it's in the list"));
         }
     }
 
@@ -70,6 +71,7 @@ Kirigami.ApplicationWindow {
         }
         actions: [
             Kirigami.Action { text: win.t("Fonds d'écran", "Wallpapers"); icon.name: "preferences-desktop-wallpaper"; checked: win.currentPage === "Wallpapers"; onTriggered: win.showPage("Wallpapers") },
+            Kirigami.Action { text: win.t("Rechercher", "Search"); icon.name: "search"; checked: win.currentPage === "Search"; onTriggered: win.showPage("Search") },
             Kirigami.Action { text: win.t("Pause automatique", "Auto pause"); icon.name: "media-playback-pause"; checked: win.currentPage === "Playback"; onTriggered: win.showPage("Playback") },
             Kirigami.Action { text: win.t("Son", "Sound"); icon.name: "audio-volume-high"; checked: win.currentPage === "Audio"; onTriggered: win.showPage("Audio") },
             Kirigami.Action { text: win.t("Écrans", "Screens"); icon.name: "video-display"; checked: win.currentPage === "Screens"; onTriggered: win.showPage("Screens") },
@@ -223,7 +225,7 @@ Kirigami.ApplicationWindow {
                 }
             }
             QQC2.ToolButton {
-                enabled: backend.serviceRunning && !!win.st.running
+                enabled: backend.serviceRunning && (!!win.st.running || win.st.mode === "video")
                 icon.name: win.st.paused ? "media-playback-start" : "media-playback-pause"
                 text: win.st.paused ? win.t("Reprendre", "Resume") : win.t("Pause", "Pause")
                 display: QQC2.AbstractButton.IconOnly

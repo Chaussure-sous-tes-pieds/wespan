@@ -133,6 +133,21 @@ def close_wallpaper(info: SteamInfo, title: str) -> bool:
     return ok
 
 
+def drawn_extent(xid: str, save: Path | None = None) -> tuple | None:
+    """(largeur, hauteur) de la zone que WE dessine vraiment dans sa fenêtre (voir probe.py) ; avec
+    save, l'image de la fenêtre y est aussi enregistrée (JPEG)."""
+    import sys
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [
+        str(Path(__file__).resolve().parent.parent), os.environ.get("PYTHONPATH")])))
+    try:
+        r = subprocess.run([sys.executable, "-m", "wespan.probe", xid, *([str(save)] if save else [])],
+                           env=env, capture_output=True, text=True, timeout=30)
+        w, h = map(int, r.stdout.split())
+        return w, h
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 # --- fenêtres X11 (Xwayland) ----------------------------------------------------------------
 
 def canvas_windows() -> dict:

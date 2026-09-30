@@ -22,6 +22,8 @@ class Backend(QObject):
     diagnosticsChanged = Signal()
     busyChanged = Signal()
     toast = Signal(str)
+    workshopChanged = Signal()
+    _workshopDone = Signal(int, "QVariantMap")
 
     def __init__(self):
         super().__init__()
@@ -30,6 +32,15 @@ class Backend(QObject):
         self._diag = []
         self._busy = ""
         self._iface = None
+        self._ws = {"items": [], "total": 0, "page": 1, "pages": 1}
+        self._ws_busy = False
+        self._ws_error = ""
+        self._ws_seq = 0
+        self._workshopDone.connect(self._on_workshop)
+        # après « S'abonner » : on guette l'arrivée du fond téléchargé par Steam
+        self._watch = QTimer(self)
+        self._watch.timeout.connect(self._watch_downloads)
+        self._watch_left = 0
         cfg = S.load()
         self._lang = S.language(cfg)
         self._chosen = bool(cfg.get("language_chosen"))
@@ -297,6 +308,75 @@ class Backend(QObject):
         subprocess.Popen(["steam", "steam://url/SteamWorkshopPage/431960"],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
+    # --- recherche dans le Workshop -------------------------------------------------------
+
+    @Property("QVariantMap", notify=workshopChanged)
+    def workshop(self):
+        return self._ws
+
+    @Property(bool, notify=workshopChanged)
+    def workshopBusy(self):
+        return self._ws_busy
+
+    @Property(str, notify=workshopChanged)
+    def workshopError(self):
+        return self._ws_error
+
+    @Property("QVariantList", notify=wallpapersChanged)
+    def installedIds(self):
+        return [w["id"] for w in self._wallpapers]
+
+    @Slot(str, str, int, str, str)
+    def workshopSearch(self, text, sort, page, kind, rating):
+        from .. import workshop
+        self._ws_seq += 1
+        seq = self._ws_seq
+        self._ws_busy, self._ws_error = True, ""
+        self.workshopChanged.emit()
+        key = (self._state.get("settings") or S.load()).get("steam_api_key", "")
+
+        def run():
+            try:
+                res = workshop.search(text, sort, max(1, page), kind, rating, key)
+            except workshop.WorkshopError as e:
+                res = {"error": str(e)}
+            self._workshopDone.emit(seq, res)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_workshop(self, seq, res):
+        if seq != self._ws_seq:
+            return                                   # réponse d'une recherche déjà remplacée
+        self._ws_busy = False
+        if "error" in res:
+            self._ws_error = res["error"]
+        else:
+            self._ws = res
+        self.workshopChanged.emit()
+
+    @Slot(str)
+    def setApiKey(self, key):
+        key = key.strip()
+        if not self._call("SetSetting", "steam_api_key", json.dumps(key)):
+            cfg = S.load(); cfg["steam_api_key"] = key; S.save(cfg)
+        self.poll()
+
+    @Slot(str)
+    def openWorkshopItem(self, wid):
+        from .. import workshop
+        subprocess.Popen(["steam", workshop.page_url(wid)], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        self._watch_left = 120                       # 10 min
+        self._watch.start(5000)
+
+    def _watch_downloads(self):
+        self._watch_left -= 1
+        before = set(self.installedIds)
+        self.refreshWallpapers()
+        if set(self.installedIds) - before:
+            self.toast.emit("downloaded")
+        if self._watch_left <= 0:
+            self._watch.stop()
+
     @Slot()
     def openDisplaySettings(self):
         subprocess.Popen(["kcmshell6", "kcm_kscreen"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -427,7 +507,7 @@ def main(tray_start: bool = False):
 def _screenshots(win, out_dir):
     """Captures de chaque page (développement / documentation) : WESPAN_SHOT_DIR=… wespan settings"""
     from PySide6.QtCore import Q_ARG, QMetaObject
-    pages = ["Wallpapers", "Playback", "Audio", "Screens", "Performance", "Startup", "Diagnostic", "About"]
+    pages = ["Wallpapers", "Search", "Playback", "Audio", "Screens", "Performance", "Startup", "Diagnostic", "About"]
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
     def step(i=0):
@@ -435,7 +515,7 @@ def _screenshots(win, out_dir):
             win.grabWindow().save(str(Path(out_dir) / f"{i:02d}-{pages[i - 1]}.png"))
         if i == len(pages):
             QMetaObject.invokeMethod(win, "openLangDialog")
-            QTimer.singleShot(1500, lambda: (win.grabWindow().save(str(Path(out_dir) / "09-Language.png")),
+            QTimer.singleShot(1500, lambda: (win.grabWindow().save(str(Path(out_dir) / f"{i + 1:02d}-Language.png")),
                                              QApplication.quit()))
             return
         QMetaObject.invokeMethod(win, "showPage", Q_ARG("QVariant", pages[i]))

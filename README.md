@@ -90,6 +90,21 @@ is edited, so it is closed and restarted automatically).
 - **Right-click the desktop**: mute/unmute, pause/resume, open settings.
 - **Command line**: `wespan status | set <id> | mute | unmute | volume 40 | pause | resume | offset HDMI-A-1 0 40 | restart | doctor`
 
+### Finding new wallpapers
+
+*Search* browses the Steam Workshop from the app (trending, most popular, most recent, by type and age rating).
+No API key is needed; an optional Steam Web API key makes it use Steam's API directly. Only the Steam client can
+subscribe, so *Subscribe* opens the wallpaper's page in Steam; once Steam has downloaded it, it shows up in
+*Wallpapers*.
+
+### Starting without waiting for Wallpaper Engine
+
+Your wallpapers are the files Steam keeps in `steamapps/workshop/content/431960`. At login, the desktop shows
+the last frame of your scene right away (full size, on every screen) while Wallpaper Engine starts, then
+switches to the live animation; a video wallpaper starts playing immediately, as Plasma plays it by itself.
+For videos, Wallpaper Engine isn't needed at all: it's closed after a minute and started again when you pick a
+scene (*Performance*).
+
 ### Auto pause
 
 In *Auto pause*, a screen counts as “covered” when a window is maximized on it, an app is fullscreen on it,
@@ -118,8 +133,10 @@ after UI changes: `wespan i18n-template src/wespan/i18n/_template.json`.
 Open the app → **Diagnostics**: every check has a *Fix* button, and the log can be copied for bug reports
 (also in `$XDG_RUNTIME_DIR/wespan/wespan.log`, or run `wespan doctor`).
 
-- **Black screen / only the still preview**: Wallpaper Engine isn't running or hasn't opened the wallpaper yet
-  — check *Diagnostics*. The first start through Steam takes ~20 s.
+- **Still picture that never animates**: Wallpaper Engine isn't running or hasn't opened the wallpaper yet
+  — check *Diagnostics*. The first start through Steam takes ~30 s.
+- **Picture drawn in a corner, rest black, after a monitor wakes up**: Wine can take a minute or two to learn
+  the new screen layout; WE Span detects it and reopens the wallpaper until it's drawn at full size.
 - **“Missing file … wallpaperui.exe” when opening Wallpaper Engine's UI**: the `S:` drive of the Proton prefix
   was removed (this happens if someone runs `proton` by hand without `STEAM_COMPAT_INSTALL_PATH` and
   `STEAM_COMPAT_LIBRARY_PATHS`). *Diagnostics → Wine prefix drive S: → Fix*.
@@ -199,6 +216,12 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
 - Icône dans la zone de notification (optionnelle, activée par défaut) : clic pour afficher/masquer la
   fenêtre, menu pause/son. Le fond continue de tourner même application fermée.
 - Clic droit sur le bureau : couper/remettre le son, pause/reprise, réglages.
+- **Rechercher** : parcourir le Steam Workshop depuis l'application (tendances, populaires, récents, par type
+  et classement d'âge), sans clé API (une clé Steam Web API est facultative). *S'abonner* ouvre la page du fond
+  dans Steam, et il apparaît dans *Fonds d'écran* une fois téléchargé.
+- Au démarrage de la session, le bureau affiche tout de suite la dernière image de la scène, en attendant
+  Wallpaper Engine ; une vidéo démarre immédiatement (Plasma la lit seul). Pour une vidéo, Wallpaper Engine est
+  fermé au bout d'une minute, puis relancé si vous choisissez une scène (*Performances*).
 - Langue : français ou anglais, proposée au premier lancement et modifiable en bas du menu latéral.
 - Ligne de commande : `wespan status`, `wespan set <id>`, `wespan mute`, `wespan volume 40`, `wespan pause`,
   `wespan offset HDMI-A-1 0 40`, `wespan restart`, `wespan doctor`.

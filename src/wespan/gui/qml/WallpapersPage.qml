@@ -31,9 +31,9 @@ Kirigami.ScrollablePage {
 
     actions: [
         Kirigami.Action {
-            text: t("Workshop", "Workshop"); icon.name: "internet-services"
-            tooltip: t("Trouver d'autres fonds sur le Steam Workshop", "Find more wallpapers on the Steam Workshop")
-            onTriggered: backend.openWorkshop()
+            text: t("Trouver d'autres fonds", "Find more"); icon.name: "search"
+            tooltip: t("Rechercher dans le Steam Workshop", "Search the Steam Workshop")
+            onTriggered: applicationWindow().showPage("Search")
         },
         Kirigami.Action {
             text: t("Actualiser", "Refresh"); icon.name: "view-refresh"
@@ -164,8 +164,8 @@ Kirigami.ScrollablePage {
                          "Subscribe to wallpapers on the Wallpaper Engine Steam Workshop.") : ""
             helpfulAction: Kirigami.Action {
                 enabled: backend.wallpapers.length === 0
-                text: page.t("Ouvrir le Workshop", "Open the Workshop"); icon.name: "internet-services"
-                onTriggered: backend.openWorkshop()
+                text: page.t("Rechercher dans le Workshop", "Search the Workshop"); icon.name: "search"
+                onTriggered: applicationWindow().showPage("Search")
             }
         }
     }

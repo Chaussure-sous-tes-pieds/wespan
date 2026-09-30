@@ -7,7 +7,8 @@
  * écran à l'autre, et c'est un vrai fond Plasma (curseur, widgets, menu du bureau).
  *
  * L'état (fenêtre, décalages, son…) est écrit par le service WE Span dans
- * $XDG_RUNTIME_DIR/wespan/state.json.
+ * $XDG_RUNTIME_DIR/wespan/state.json. Avant qu'il ait démarré (ouverture de session), on prend la
+ * copie qu'il garde dans ~/.cache/wespan : dernière image de la scène, ou la vidéo, tout de suite.
  */
 import QtQuick
 import QtQuick.Window
@@ -81,15 +82,26 @@ WallpaperItem {
         anchors.fill: parent
         clip: true
 
-        // Aperçu fixe tant qu'aucun flux n'est là (ouverture de session, WE qui démarre…)
+        // Tant qu'aucun flux n'est là (ouverture de session, WE qui démarre…) : la dernière vraie
+        // image de la scène (fenêtre WE entière, même rectangle que le flux), sinon l'aperçu du fond
+        readonly property bool waiting: !root.videoShowing && !streamA.showing && !streamB.showing
+        Image {
+            id: lastFrame
+            x: root.originX; y: root.originY
+            width: root.winW * root.zoomF; height: root.winH * root.zoomF
+            source: root.st.frame ? "file://" + root.st.frame.path + "?" + root.st.frame.time : ""
+            asynchronous: true
+            cache: false
+            visible: viewport.waiting && status === Image.Ready
+        }
         Image {
             x: root.originX; y: root.originY
             width: root.contW * root.zoomF; height: root.contH * root.zoomF
-            source: root.st.preview ? "file://" + root.st.preview : ""
+            source: root.st.preview && !root.st.frame ? "file://" + root.st.preview : ""
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: false
-            visible: !root.videoShowing && !streamA.showing && !streamB.showing && status === Image.Ready
+            visible: viewport.waiting && !lastFrame.visible && status === Image.Ready
             opacity: 0.85
         }
 
@@ -283,7 +295,8 @@ WallpaperItem {
     function poll() {
         if (polling) return;
         polling = true;
-        exec.run('cat "$XDG_RUNTIME_DIR/wespan/state.json" 2>/dev/null', out => {
+        exec.run('cat "$XDG_RUNTIME_DIR/wespan/state.json" 2>/dev/null || '
+                 + 'cat "${XDG_CACHE_HOME:-$HOME/.cache}/wespan/last-state.json" 2>/dev/null', out => {
             polling = false;
             let s;
             try { s = JSON.parse(out); } catch (e) { s = null; }

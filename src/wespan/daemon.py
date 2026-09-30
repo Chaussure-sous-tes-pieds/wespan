@@ -23,7 +23,13 @@ LAUNCH_COOLDOWN = 90        # s entre deux lancements de WE
 OPEN_COOLDOWN = 30          # s entre deux réouvertures de la fenêtre
 WE_WARMUP = 12              # s laissés à WE pour démarrer avant d'ouvrir un fond
 GRACE_S = 6                 # s de lecture garantis après l'ouverture d'un fond (avant une éventuelle pause)
-LAYOUT_SETTLE = 5           # s de disposition d'écrans stable avant de recréer la fenêtre
+LAYOUT_SETTLE = 8           # s de disposition d'écrans stable avant de recréer la fenêtre
+X_SCREEN_WAIT = 30          # s max à attendre que l'écran Xwayland ait la nouvelle taille
+VERIFY_WINDOW = 600         # s après un changement d'écrans pendant lesquels on vérifie chaque ouverture
+VERIFY_DELAY = 5            # s après l'ouverture avant de mesurer ce que WE dessine
+REOPEN_DELAYS = (10, 20, 40, 60, 120, 240)   # s avant chaque nouvel essai si WE dessine trop petit
+VIDEO_QUIT_DELAY = 60       # s de fond vidéo avant de fermer WE (inutile pour une vidéo)
+SNAPSHOT_EVERY = 600        # s entre deux captures de la dernière image (affichée à l'ouverture de session)
 
 
 class Worker(threading.Thread):
@@ -80,6 +86,18 @@ class Daemon(dbus.service.Object):
         self.we_seen_since = 0.0
         self.sink_idx = None
         self.layout_changed = 0.0
+        self.verify_at = 0.0                 # mesure prévue de la zone dessinée par WE
+        self.reopen_at = 0.0                 # réouverture prévue (WE dessinait trop petit)
+        self.bad_renders = 0
+        self.video_since = 0.0
+        self.last_snapshot = 0.0
+        self.last_persist = ""
+        # dernière image gardée, et horloge vidéo de la session précédente (le fond Plasma a pu
+        # commencer à jouer la vidéo avant le démarrage du service : on garde la même horloge)
+        last = S.load_last_state()
+        self.frame = last.get("frameInfo") if S.FRAME_FILE.is_file() else None
+        if (last.get("video") or {}).get("epoch") and last.get("wallpaper") == self.cfg["wallpaper"]:
+            self.video_epoch = last["video"]["epoch"] / 1000
         self.open_pending = False
         self.opened_wallpaper = None
         self.last_audio_check = 0.0
@@ -210,6 +228,8 @@ class Daemon(dbus.service.Object):
 
     def _tick(self):
         now = time.time()
+        if not self.video_mode():
+            self.video_since = 0.0
         pid = engine.we_pid()
         if not pid:
             self.we_seen_since = 0
@@ -227,10 +247,20 @@ class Daemon(dbus.service.Object):
             if self.paused:                           # rien ne doit rester gelé
                 engine.freeze(False)
                 self.paused = False
-            wins = engine.canvas_windows()
-            if wins and not self.worker.busy and now - self.last_open > 5:
-                info = self.info       # le fond vidéo ne passe pas par WE : on libère ses fenêtres
-                self.worker.submit("close-scenes", lambda: [engine.close_wallpaper(info, t) for t in wins])
+            if not self.video_since:
+                self.video_since = now
+            # le fond vidéo ne passe pas par WE : on le ferme (RAM, CPU), mais pas tout de suite, au
+            # cas où l'on repasse sur une scène (relancer WE prend ~30 s)
+            if self.cfg["quit_engine_for_video"] and now - self.video_since > VIDEO_QUIT_DELAY \
+                    and not self.worker.busy:
+                log.info("video wallpaper: closing Wallpaper Engine (not needed)")
+                self.last_launch = 0
+                self.worker.submit("quit-for-video", engine.quit_engine)
+            else:
+                wins = engine.canvas_windows()
+                if wins and not self.worker.busy and now - self.last_open > 5:
+                    info = self.info       # on libère ses fenêtres
+                    self.worker.submit("close-scenes", lambda: [engine.close_wallpaper(info, t) for t in wins])
             self.xid = None
         else:
             if not self.we_seen_since:
@@ -259,9 +289,13 @@ class Daemon(dbus.service.Object):
                 if self.window_size is None:
                     self.window_size = desktop.rule_size()   # fenêtre créée avant notre démarrage
                 if self.window_size and self.window_size != (w, h) and not self.worker.busy \
-                        and now - self.layout_changed > LAYOUT_SETTLE:
+                        and now - self.layout_changed > LAYOUT_SETTLE \
+                        and (now - self.layout_changed > X_SCREEN_WAIT
+                             or desktop.x_screen_size() in (None, (w, h))):
                     log.info("render size %s -> %s: re-creating the window", self.window_size, (w, h))
                     self.open_current(recreate=True)
+                elif not self.worker.busy and not self.open_pending:
+                    self.verify_tick(now, w, h)
             idx = engine.sink_input() if now - self.last_audio_check > 10 or self.sink_idx is None else self.sink_idx
             if idx is not None:
                 self.last_audio_check = now
@@ -269,6 +303,54 @@ class Daemon(dbus.service.Object):
                 self.sink_idx = idx
                 engine.set_audio(self.cfg["volume"], self.cfg["muted"])
         self.write_state()
+
+    def verify_tick(self, now, w, h):
+        """Mesure ce que WE dessine vraiment, et en garde l'image si elle est bonne (le fond Plasma
+        l'affiche à l'ouverture de session, avant que WE ait démarré).
+        Juste après un changement d'écrans, Wine peut encore avoir l'ancienne disposition : WE
+        dessine alors à l'ancienne taille dans un coin de la fenêtre et laisse le reste noir. On
+        rouvre alors la fenêtre (délais croissants) tant que ce n'est pas bon."""
+        if self.reopen_at and now > self.reopen_at:
+            self.reopen_at = 0.0
+            self.open_current(recreate=True)
+            return
+        if not self.verify_at and self.xid and now - self.last_snapshot > SNAPSHOT_EVERY:
+            self.verify_at = now
+        if not (self.verify_at and now > self.verify_at and self.xid and not self.paused):
+            return
+        self.verify_at = 0.0
+        self.last_snapshot = now
+        xid, wid = self.xid, self.opened_wallpaper or self.cfg["wallpaper"]
+        after_layout = now - self.layout_changed < VERIFY_WINDOW
+        S.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = S.FRAME_FILE.with_suffix(".tmp.jpg")
+
+        def done(ext):
+            if not ext:
+                return
+            if ext[0] >= w - 24 and ext[1] >= h - 24:
+                if self.bad_renders:
+                    log.info("render OK at %dx%d after %d re-open(s)", w, h, self.bad_renders)
+                self.bad_renders = 0
+                if wid == self.cfg["wallpaper"] and tmp.is_file():
+                    tmp.replace(S.FRAME_FILE)
+                    self.frame = {"wallpaper": wid, "size": [w, h], "time": int(time.time())}
+                    self.write_state()
+                return
+            tmp.unlink(missing_ok=True)
+            if not after_layout:
+                return          # scène sombre sur un bord, sans doute : on ne garde pas l'image, c'est tout
+            if self.bad_renders >= len(REOPEN_DELAYS):
+                log.warning("Wallpaper Engine still draws only %dx%d of %dx%d: giving up", *ext, w, h)
+                self.bad_renders = 0
+                return
+            delay = REOPEN_DELAYS[self.bad_renders]
+            self.bad_renders += 1
+            log.info("Wallpaper Engine draws only %dx%d of %dx%d (old screen layout?): "
+                     "re-opening in %ds", *ext, w, h, delay)
+            self.reopen_at = time.time() + delay
+
+        self.worker.submit("verify", lambda: engine.drawn_extent(xid, tmp), done)
 
     def open_current(self, recreate=False):
         # clics rapides : une seule ouverture en attente, qui prendra le dernier fond choisi
@@ -325,6 +407,9 @@ class Daemon(dbus.service.Object):
             self.window_size = (w, h)
             self.sink_idx = None
             self.grace_until = time.time() + GRACE_S
+            self.verify_at = time.time() + VERIFY_DELAY
+            if time.time() - self.layout_changed >= VERIFY_WINDOW:
+                self.bad_renders = 0
             log.info("wallpaper %s opened at %dx%d (%s)", self.cfg["wallpaper"], w, h, new_title)
             self.tick()
             self.pause_tick(force=True)
@@ -449,7 +534,32 @@ class Daemon(dbus.service.Object):
             "video": vfile and {"path": str(vfile), "epoch": int(self.video_epoch * 1000),
                                 "pausedPos": None if self.video_paused_pos is None else int(self.video_paused_pos * 1000)},
             "audioScreen": self.screens[0]["name"] if self.screens else "",
+            "frame": self.frame_state(w, h),
         }
+
+    def frame_state(self, w, h):
+        f = self.frame
+        if not f or f.get("wallpaper") != self.cfg["wallpaper"] or list(f.get("size") or []) != [w, h]:
+            return None
+        return {"path": str(S.FRAME_FILE), "time": f.get("time", 0)}
+
+    def persist_state(self, st):
+        """Copie durable de ce qu'il faut au fond Plasma pour s'afficher avant le démarrage du
+        service (ouverture de session) : dernière image, géométrie, vidéo…"""
+        keep = {k: st[k] for k in ("window", "content", "offsets", "muted", "volume", "wallpaper",
+                                   "preview", "screens", "lang", "mode", "video", "audioScreen", "frame")}
+        keep["frameInfo"] = self.frame
+        js = json.dumps(keep, ensure_ascii=False, sort_keys=True)
+        if js == self.last_persist:
+            return
+        self.last_persist = js
+        try:
+            S.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = S.LAST_STATE_FILE.with_suffix(".tmp")
+            tmp.write_text(js)
+            tmp.replace(S.LAST_STATE_FILE)
+        except OSError:
+            pass
 
     def write_state(self):
         st = self.state()
@@ -463,6 +573,7 @@ class Daemon(dbus.service.Object):
         tmp = STATE_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(st, ensure_ascii=False))
         tmp.replace(STATE_FILE)
+        self.persist_state(st)
 
     # --- API DBus : script KWin -----------------------------------------------------------
 

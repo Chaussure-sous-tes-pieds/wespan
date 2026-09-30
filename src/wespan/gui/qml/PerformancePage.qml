@@ -49,6 +49,22 @@ Kirigami.ScrollablePage {
                        + "Wallpaper Engine.")
         }
 
+        QQC2.CheckBox {
+            text: page.t("fermer Wallpaper Engine pendant une vidéo", "close Wallpaper Engine during a video")
+            enabled: page.cfg.native_video !== false
+            checked: page.cfg.quit_engine_for_video !== false
+            onToggled: backend.setSetting("quit_engine_for_video", checked)
+        }
+        QQC2.Label {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+            wrapMode: Text.Wrap
+            opacity: 0.7
+            text: page.t("Il ne sert à rien pour une vidéo : il est fermé au bout d'une minute (RAM et processeur "
+                       + "libérés) et relancé tout seul si vous choisissez une scène.",
+                         "It isn't needed for a video: it's closed after a minute (frees RAM and CPU) and started "
+                       + "again automatically when you pick a scene.")
+        }
+
         Kirigami.Separator { Kirigami.FormData.isSection: true; Kirigami.FormData.label: page.t("Rendu", "Rendering") }
 
         QQC2.Label {

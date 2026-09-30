@@ -17,6 +17,10 @@ CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / 
 RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/tmp/wespan-{os.getuid()}")) / APP_ID
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 STATE_FILE = RUNTIME_DIR / "state.json"
+# gardés d'une session à l'autre : le fond Plasma les affiche avant que le service ait démarré
+CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / APP_ID
+FRAME_FILE = CACHE_DIR / "last-frame.jpg"            # dernière image de la scène (fenêtre WE entière)
+LAST_STATE_FILE = CACHE_DIR / "last-state.json"
 LOG_FILE = RUNTIME_DIR / "wespan.log"
 
 DEFAULTS = {
@@ -47,6 +51,8 @@ DEFAULTS = {
     "language_chosen": False,        # la fenêtre « choisissez votre langue » a été vue
     "tray_icon": True,               # icône dans la zone de notification (fermer la fenêtre = la réduire)
     "native_video": True,            # fonds vidéo lus par Plasma (décodage GPU) plutôt que par WE/Proton
+    "quit_engine_for_video": True,   # fermer Wallpaper Engine quand le fond est une vidéo (inutile alors)
+    "steam_api_key": "",             # clé Steam Web API, pour chercher dans le Workshop (page Rechercher)
     "proton": "",                    # chemin du script proton (auto-détecté si vide)
 }
 
@@ -84,6 +90,13 @@ def _migrate_v1(data: dict) -> None:
         data["offsets"] = json.loads((CONFIG_DIR / "layout.json").read_text()).get("offsets", {})
     except (OSError, ValueError):
         pass
+
+
+def load_last_state() -> dict:
+    try:
+        return json.loads(LAST_STATE_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 def language(data: dict) -> str:

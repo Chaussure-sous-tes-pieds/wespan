@@ -119,6 +119,12 @@ def remove_rule() -> None:
 
 # --- script KWin ----------------------------------------------------------------------------
 
+def x_screen_size() -> tuple | None:
+    """Taille actuelle de l'écran Xwayland (celui que voit Wine), ou None si inconnue."""
+    m = re.search(r"current (\d+) x (\d+)", _run("xrandr", "--current", timeout=5))
+    return (int(m[1]), int(m[2])) if m else None
+
+
 def kwin_script_installed() -> bool:
     return any((Path(d) / "kwin/scripts" / KWIN_SCRIPT_ID / "metadata.json").exists()
                for d in [Path.home() / ".local/share", Path("/usr/share")])
