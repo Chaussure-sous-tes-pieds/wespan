@@ -8,7 +8,7 @@
         "Id": "org.wespan.wallpaper",
         "License": "MIT",
         "Name": "Wallpaper Engine (WE Span)",
-        "Version": "1.0"
+        "Version": "1.1"
     },
     "X-KDE-ParentApp": "org.kde.plasmashell"
 }
