@@ -14,10 +14,21 @@ Kirigami.ScrollablePage {
     property string sort: "trend"
     property string kind: ""
     property string rating: "Everyone"
+    property int days: 7
+    property string genre: ""
+    property string resolution: ""
+    property bool audioOnly: false
+    property bool customOnly: false
+    property bool approvedOnly: false
+    readonly property var extraTags: [genre, resolution, audioOnly ? "Audio responsive" : "",
+                                      customOnly ? "Customizable" : "", approvedOnly ? "Approved" : ""].filter(x => x)
     readonly property var ws: backend.workshop
     readonly property var installed: backend.installedIds
 
-    function run(p) { backend.workshopSearch(query, sort, p || 1, kind, rating); grid.positionViewAtBeginning(); }
+    function run(p) {
+        backend.workshopSearchEx(query, sort, p || 1, kind, rating, extraTags, days);
+        grid.positionViewAtBeginning();
+    }
     Component.onCompleted: if (!ws.items || ws.items.length === 0) run(1)
 
     function typeLabel(ty) {
@@ -70,11 +81,34 @@ Kirigami.ScrollablePage {
                     textRole: "label"; valueRole: "value"
                     model: [
                         { label: page.t("Tendances", "Trending"), value: "trend" },
-                        { label: page.t("Les plus populaires", "Most popular"), value: "popular" },
+                        { label: page.t("Les mieux notés", "Top rated"), value: "toprated" },
+                        { label: page.t("Les plus abonnés", "Most subscribed"), value: "popular" },
                         { label: page.t("Plus récents", "Most recent"), value: "recent" },
+                        { label: page.t("Mis à jour récemment", "Recently updated"), value: "updated" },
                         { label: page.t("Pertinence", "Relevance"), value: "relevance" }
                     ]
                     onActivated: { page.sort = currentValue; page.run(1); }
+                }
+                QQC2.ComboBox {
+                    visible: page.sort === "trend"
+                    textRole: "label"; valueRole: "value"
+                    model: [
+                        { label: page.t("Aujourd'hui", "Today"), value: 1 },
+                        { label: page.t("Cette semaine", "This week"), value: 7 },
+                        { label: page.t("Ce mois-ci", "This month"), value: 30 },
+                        { label: page.t("3 mois", "3 months"), value: 90 },
+                        { label: page.t("6 mois", "6 months"), value: 180 },
+                        { label: page.t("Cette année", "This year"), value: 365 }
+                    ]
+                    currentIndex: 1
+                    onActivated: { page.days = currentValue; page.run(1); }
+                }
+                QQC2.ToolButton {
+                    id: filterButton
+                    icon.name: "view-filter"
+                    text: page.extraTags.length ? page.t("Filtres (", "Filters (") + page.extraTags.length + ")" : page.t("Filtres", "Filters")
+                    checked: page.extraTags.length > 0
+                    onClicked: filterMenu.popup(filterButton, 0, filterButton.height)
                 }
                 QQC2.ComboBox {
                     textRole: "label"; valueRole: "value"
@@ -98,6 +132,45 @@ Kirigami.ScrollablePage {
                       + page.t(" · « S'abonner » ouvre Steam, le fond apparaît ici une fois téléchargé",
                                " · “Subscribe” opens Steam; the wallpaper shows up here once downloaded")
             }
+        }
+    }
+
+    QQC2.Menu {
+        id: filterMenu
+        QQC2.Menu {
+            title: page.t("Genre", "Genre") + (page.genre ? " : " + page.genre : "")
+            QQC2.MenuItem { text: page.t("Tous", "Any"); checkable: true; checked: page.genre === ""; onTriggered: { page.genre = ""; page.run(1); } }
+            Repeater {
+                model: backend.workshopTags.genres
+                delegate: QQC2.MenuItem {
+                    required property var modelData
+                    text: modelData; checkable: true; checked: page.genre === modelData
+                    onTriggered: { page.genre = modelData; page.run(1); }
+                }
+            }
+        }
+        QQC2.Menu {
+            title: page.t("Résolution", "Resolution") + (page.resolution ? " : " + page.resolution : "")
+            QQC2.MenuItem { text: page.t("Toutes", "Any"); checkable: true; checked: page.resolution === ""; onTriggered: { page.resolution = ""; page.run(1); } }
+            Repeater {
+                model: backend.workshopTags.resolutions
+                delegate: QQC2.MenuItem {
+                    required property var modelData
+                    text: modelData; checkable: true; checked: page.resolution === modelData
+                    onTriggered: { page.resolution = modelData; page.run(1); }
+                }
+            }
+        }
+        QQC2.MenuSeparator {}
+        QQC2.MenuItem { text: page.t("Réagit au son", "Audio responsive"); checkable: true; checked: page.audioOnly; onTriggered: { page.audioOnly = checked; page.run(1); } }
+        QQC2.MenuItem { text: page.t("Personnalisable", "Customizable"); checkable: true; checked: page.customOnly; onTriggered: { page.customOnly = checked; page.run(1); } }
+        QQC2.MenuItem { text: page.t("Approuvés par Wallpaper Engine", "Approved by Wallpaper Engine"); checkable: true; checked: page.approvedOnly; onTriggered: { page.approvedOnly = checked; page.run(1); } }
+        QQC2.MenuSeparator {}
+        QQC2.MenuItem {
+            icon.name: "edit-clear"; text: page.t("Effacer les filtres", "Clear filters")
+            enabled: page.extraTags.length > 0
+            onTriggered: { page.genre = ""; page.resolution = ""; page.audioOnly = false; page.customOnly = false;
+                           page.approvedOnly = false; page.run(1); }
         }
     }
 
@@ -191,6 +264,7 @@ Kirigami.ScrollablePage {
                             font: Kirigami.Theme.smallFont
                             text: page.fmtCount(cell.modelData.subs) + page.t(" abonnés", " subscribers")
                                   + (cell.modelData.size ? " · " + page.fmtSize(cell.modelData.size) : "")
+                                  + (cell.modelData.resolution ? " · " + cell.modelData.resolution.replace(" x ", "×") : "")
                             elide: Text.ElideRight
                         }
                         QQC2.Button {

@@ -90,9 +90,22 @@ is edited, so it is closed and restarted automatically).
 - **Right-click the desktop**: mute/unmute, pause/resume, open settings.
 - **Command line**: `wespan status | set <id> | mute | unmute | volume 40 | pause | resume | offset HDMI-A-1 0 40 | restart | doctor`
 
+### Your library
+
+- **Folders**: create folders in *Wallpapers*, then right-click a wallpaper → *Move to folder* (or drag it onto
+  a folder). Right-click a folder to rename, reorder or delete it (the wallpapers stay).
+- **Favorites**: click a wallpaper's star; favorites come first and have their own view.
+- **Sort and filter like Wallpaper Engine**: name, date added, last updated, popularity, Workshop favorites,
+  rating (with an API key), size, type; filters for age rating, resolution, genre/tag, source, audio
+  responsive, customizable, approved. Popularity and resolution come from the Workshop (refreshed daily).
+- **Customize**: right-click → *Customize…* (or the gear on hover) shows the wallpaper's own settings (clock
+  format, colors, effects…), applied live and remembered for next time; *Reset to defaults* undoes them.
+
 ### Finding new wallpapers
 
-*Search* browses the Steam Workshop from the app (trending, most popular, most recent, by type and age rating).
+*Search* browses the Steam Workshop from the app (trending over a day to a year, top rated, most subscribed,
+most recent, recently updated; filters for type, age rating, genre, resolution, audio responsive,
+customizable, approved).
 No API key is needed; an optional Steam Web API key makes it use Steam's API directly. Only the Steam client can
 subscribe, so *Subscribe* opens the wallpaper's page in Steam; once Steam has downloaded it, it shows up in
 *Wallpapers*.
@@ -135,6 +148,10 @@ Open the app → **Diagnostics**: every check has a *Fix* button, and the log ca
 
 - **Still picture that never animates**: Wallpaper Engine isn't running or hasn't opened the wallpaper yet
   — check *Diagnostics*. The first start through Steam takes ~30 s.
+- **Clock in a wallpaper showing an old time**: a scene frozen for a long time (screen locked, all windows
+  maximized) is reopened when it resumes, so its clock is right again.
+- **Short video wallpapers stuttering at each loop**: short clips are played from a ~60 s version made once
+  (stream-copied, no quality loss, needs `ffmpeg`; cached in `~/.cache/wespan/loops`).
 - **Picture drawn in a corner, rest black, after a monitor wakes up**: Wine can take a minute or two to learn
   the new screen layout; WE Span detects it and reopens the wallpaper until it's drawn at full size.
 - **“Missing file … wallpaperui.exe” when opening Wallpaper Engine's UI**: the `S:` drive of the Proton prefix
@@ -216,8 +233,13 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
 - Icône dans la zone de notification (optionnelle, activée par défaut) : clic pour afficher/masquer la
   fenêtre, menu pause/son. Le fond continue de tourner même application fermée.
 - Clic droit sur le bureau : couper/remettre le son, pause/reprise, réglages.
-- **Rechercher** : parcourir le Steam Workshop depuis l'application (tendances, populaires, récents, par type
-  et classement d'âge), sans clé API (une clé Steam Web API est facultative). *S'abonner* ouvre la page du fond
+- **Bibliothèque** : dossiers (clic droit sur un fond → *Ranger dans*, ou glisser-déposer sur le dossier),
+  favoris (l'étoile), tri et filtres comme dans Wallpaper Engine (date d'ajout, mise à jour, popularité,
+  résolution, genre, classement d'âge, réagit au son, personnalisable…).
+- **Personnaliser** : clic droit → *Personnaliser…* affiche les réglages propres au fond (format de l'horloge,
+  couleurs, effets…), appliqués en direct et mémorisés.
+- **Rechercher** : parcourir le Steam Workshop depuis l'application (tendances sur un jour à un an, mieux
+  notés, plus abonnés, récents, mis à jour ; filtres type, âge, genre, résolution…), sans clé API (une clé Steam Web API est facultative). *S'abonner* ouvre la page du fond
   dans Steam, et il apparaît dans *Fonds d'écran* une fois téléchargé.
 - Au démarrage de la session, le bureau affiche tout de suite la dernière image de la scène, en attendant
   Wallpaper Engine ; une vidéo démarre immédiatement (Plasma la lit seul). Pour une vidéo, Wallpaper Engine est

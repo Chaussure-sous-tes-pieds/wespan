@@ -443,6 +443,11 @@ class Daemon(dbus.service.Object):
             log.info("wallpaper %s opened at %dx%d (%s)", self.cfg["wallpaper"], w, h, new_title)
             self.tick()
             self.pause_tick(force=True)
+            props = self.cfg["wallpaper_props"].get(self.cfg["wallpaper"])
+            if props:
+                wid_title = new_title
+                self.worker.submit("props", lambda: (time.sleep(0.5),
+                                                     engine.apply_properties(info, wid_title, props))[1])
             if old_title and old_title != new_title:
                 # laisse le plugin basculer sur le nouveau flux avant de fermer l'ancien
                 GLib.timeout_add_seconds(3, lambda: (self.worker.submit(
@@ -703,6 +708,33 @@ class Daemon(dbus.service.Object):
             self.tick()
         self.write_state()
         return True
+
+    @dbus.service.method(DBUS_IFACE, in_signature="sss", out_signature="b")
+    def SetWallpaperProperty(self, wid, key, value_json):
+        """Réglage personnalisable d'un fond : mémorisé, et appliqué tout de suite s'il est affiché."""
+        try:
+            val = json.loads(value_json)
+        except ValueError:
+            return False
+        wid, key = str(wid), str(key)
+        self.cfg["wallpaper_props"].setdefault(wid, {})[key] = val
+        S.save(self.cfg)
+        if wid == self.cfg["wallpaper"] and self.xid and not self.video_mode():
+            info, title = self.info, self.title
+            self.worker.submit("prop", lambda: engine.apply_properties(info, title, {key: val}))
+        self.write_state()
+        return True
+
+    @dbus.service.method(DBUS_IFACE, in_signature="s", out_signature="")
+    def ResetWallpaperProperties(self, wid):
+        """Retour aux réglages d'origine : on rouvre le fond s'il est affiché (WE repart des valeurs
+        de project.json)."""
+        if self.cfg["wallpaper_props"].pop(str(wid), None) is None:
+            return
+        S.save(self.cfg)
+        if str(wid) == self.cfg["wallpaper"] and self.xid and not self.video_mode():
+            self.open_current(recreate=True)
+        self.write_state()
 
     @dbus.service.method(DBUS_IFACE, in_signature="i", out_signature="")
     def SetVolume(self, v):

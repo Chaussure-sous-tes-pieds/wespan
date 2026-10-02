@@ -24,6 +24,8 @@ class Backend(QObject):
     toast = Signal(str)
     workshopChanged = Signal()
     _workshopDone = Signal(int, "QVariantMap")
+    libraryChanged = Signal()
+    _metaDone = Signal("QVariantMap")
 
     def __init__(self):
         super().__init__()
@@ -37,6 +39,9 @@ class Backend(QObject):
         self._ws_error = ""
         self._ws_seq = 0
         self._workshopDone.connect(self._on_workshop)
+        self._meta = self._load_meta()            # détails du Workshop (popularité, résolution…)
+        self._metaDone.connect(self._on_meta)
+        self._meta_running = False
         # après « S'abonner » : on guette l'arrivée du fond téléchargé par Steam
         self._watch = QTimer(self)
         self._watch.timeout.connect(self._watch_downloads)
@@ -154,8 +159,18 @@ class Backend(QObject):
             data = list_wallpapers(SteamInfo())
         else:
             data = json.loads(raw)
+        items = self._meta.get("items", {})
+        for w in data:
+            m = items.get(w["id"])
+            if m:
+                w.update({"subs": m.get("subs", 0), "favorited": m.get("favorited", 0), "score": m.get("score", 0),
+                          "resolution": m.get("resolution", ""), "approved": m.get("approved", False),
+                          "published": m.get("created", 0), "wsTags": m.get("tags", [])})
+                if m.get("updated"):
+                    w["updated"] = m["updated"]
         self._wallpapers = data
         self.wallpapersChanged.emit()
+        self.refreshMeta()
 
     @Slot(str)
     def setWallpaper(self, wid):
@@ -308,6 +323,168 @@ class Backend(QObject):
         subprocess.Popen(["steam", "steam://url/SteamWorkshopPage/431960"],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
+    # --- détails du Workshop pour la bibliothèque (tri par popularité, résolution…) ------------
+
+    META_FILE = S.CACHE_DIR / "workshop-meta.json"
+    META_MAX_AGE = 24 * 3600
+
+    def _load_meta(self):
+        try:
+            return json.loads(self.META_FILE.read_text())
+        except (OSError, ValueError):
+            return {"items": {}, "fetched": {}}
+
+    @Slot()
+    def refreshMeta(self):
+        """En arrière-plan : détails des fonds du Workshop inconnus ou vieux d'un jour."""
+        import time
+        if self._meta_running:
+            return
+        fetched = self._meta.get("fetched", {})
+        now = time.time()
+        ids = [w["id"] for w in self._wallpapers if w.get("source") == "workshop" and w["id"].isdigit()
+               and now - fetched.get(w["id"], 0) > self.META_MAX_AGE]
+        if not ids:
+            return
+        self._meta_running = True
+        key = (self._state.get("settings") or S.load()).get("steam_api_key", "")
+
+        def run():
+            from .. import workshop
+            try:
+                got = workshop.details_many(ids, key)
+            except workshop.WorkshopError:
+                got = {}
+            self._metaDone.emit({"got": got, "ids": ids, "time": time.time()})
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_meta(self, res):
+        self._meta_running = False
+        got = res.get("got") or {}
+        if not got:
+            return
+        self._meta.setdefault("items", {}).update(got)
+        for i in res.get("ids") or []:          # (y compris ceux retirés du Workshop : pas de nouvel essai)
+            self._meta.setdefault("fetched", {})[i] = res["time"]
+        try:
+            S.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            self.META_FILE.write_text(json.dumps(self._meta, ensure_ascii=False))
+        except OSError:
+            pass
+        self.refreshWallpapers()
+
+    # --- bibliothèque : favoris et dossiers -------------------------------------------------
+
+    def _cfg_now(self):
+        return self._state.get("settings") or S.load()
+
+    def _put(self, key, value):
+        """Réglage écrit par le service s'il tourne, sinon directement."""
+        if not self._call("SetSetting", key, json.dumps(value)):
+            cfg = S.load(); cfg[key] = value; S.save(cfg)
+        self.poll()
+        self.libraryChanged.emit()
+
+    @Property("QVariantList", notify=stateChanged)
+    def favorites(self):
+        return list(self._cfg_now().get("favorites") or [])
+
+    @Property("QVariantList", notify=stateChanged)
+    def folders(self):
+        return list(self._cfg_now().get("folders") or [])
+
+    @Slot(str)
+    def toggleFavorite(self, wid):
+        fav = self.favorites
+        fav.remove(wid) if wid in fav else fav.append(wid)
+        self._put("favorites", fav)
+
+    @Slot(str, result=bool)
+    def createFolder(self, name):
+        name = name.strip()
+        folders = self.folders
+        if not name or any(f["name"] == name for f in folders):
+            return False
+        folders.append({"name": name, "ids": []})
+        self._put("folders", folders)
+        return True
+
+    @Slot(str, str, result=bool)
+    def renameFolder(self, old, new):
+        new = new.strip()
+        folders = self.folders
+        if not new or any(f["name"] == new for f in folders):
+            return False
+        for f in folders:
+            if f["name"] == old:
+                f["name"] = new
+        self._put("folders", folders)
+        return True
+
+    @Slot(str)
+    def deleteFolder(self, name):
+        self._put("folders", [f for f in self.folders if f["name"] != name])
+
+    @Slot(str, str)
+    def moveToFolder(self, wid, name):
+        """Un fond est dans un dossier au plus ; name vide = le sortir de son dossier."""
+        folders = self.folders
+        for f in folders:
+            f["ids"] = [i for i in f.get("ids", []) if i != wid]
+            if f["name"] == name:
+                f["ids"].append(wid)
+        self._put("folders", folders)
+
+    @Slot(str, int)
+    def moveFolder(self, name, delta):
+        folders = self.folders
+        i = next((k for k, f in enumerate(folders) if f["name"] == name), -1)
+        j = i + delta
+        if i < 0 or not 0 <= j < len(folders):
+            return
+        folders[i], folders[j] = folders[j], folders[i]
+        self._put("folders", folders)
+
+    # --- réglages personnalisables d'un fond ------------------------------------------------
+
+    @Slot(str, result="QVariantList")
+    def wallpaperProperties(self, wid):
+        from .. import props
+        w = next((x for x in self._wallpapers if x["id"] == wid), None)
+        if not w:
+            return []
+        over = (self._cfg_now().get("wallpaper_props") or {}).get(wid, {})
+        items = props.load(Path(w["path"]), over, self._lang)
+        for i in items:
+            if i["type"] == "color":
+                i["hex"] = props.color_to_hex(i["value"])
+        return items
+
+    @Slot(str, str, "QVariant")
+    def setWallpaperProperty(self, wid, key, value):
+        from .. import props
+        if hasattr(value, "toVariant"):
+            value = value.toVariant()
+        if isinstance(value, str) and value.startswith("#"):
+            value = props.hex_to_color(value)
+        if not self._call("SetWallpaperProperty", wid, key, json.dumps(value)):
+            cfg = S.load(); cfg.setdefault("wallpaper_props", {}).setdefault(wid, {})[key] = value; S.save(cfg)
+        self.poll()
+        self.libraryChanged.emit()
+
+    @Slot(str)
+    def resetWallpaperProperties(self, wid):
+        if self._call("ResetWallpaperProperties", wid) is None:
+            cfg = S.load(); cfg.get("wallpaper_props", {}).pop(wid, None); S.save(cfg)
+        self.poll()
+        self.libraryChanged.emit()
+
+    @Slot(str)
+    def openWorkshopPage(self, wid):
+        from .. import workshop
+        subprocess.Popen(["steam", workshop.page_url(wid)], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+
     # --- recherche dans le Workshop -------------------------------------------------------
 
     @Property("QVariantMap", notify=workshopChanged)
@@ -326,8 +503,17 @@ class Backend(QObject):
     def installedIds(self):
         return [w["id"] for w in self._wallpapers]
 
+    @Property("QVariantMap", constant=True)
+    def workshopTags(self):
+        from .. import workshop
+        return {"genres": list(workshop.GENRES), "resolutions": list(workshop.RESOLUTIONS)}
+
     @Slot(str, str, int, str, str)
     def workshopSearch(self, text, sort, page, kind, rating):
+        self.workshopSearchEx(text, sort, page, kind, rating, [], 7)
+
+    @Slot(str, str, int, str, str, "QVariantList", int)
+    def workshopSearchEx(self, text, sort, page, kind, rating, tags, days):
         from .. import workshop
         self._ws_seq += 1
         seq = self._ws_seq
@@ -337,7 +523,7 @@ class Backend(QObject):
 
         def run():
             try:
-                res = workshop.search(text, sort, max(1, page), kind, rating, key)
+                res = workshop.search(text, sort, max(1, page), kind, rating, key, list(tags or []), days)
             except workshop.WorkshopError as e:
                 res = {"error": str(e)}
             self._workshopDone.emit(seq, res)
@@ -482,6 +668,8 @@ def main(tray_start: bool = False):
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("startHidden", bool(tray_start))
     engine.rootContext().setContextProperty("shotMode", bool(shots))
+    # captures de développement : ouvrir aussi la fenêtre « Personnaliser » de ce fond
+    engine.rootContext().setContextProperty("shotProps", os.environ.get("WESPAN_SHOT_PROPS", "") if shots else "")
     engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Main.qml")))
     if not engine.rootObjects():
         return 1
@@ -507,7 +695,8 @@ def main(tray_start: bool = False):
 def _screenshots(win, out_dir):
     """Captures de chaque page (développement / documentation) : WESPAN_SHOT_DIR=… wespan settings"""
     from PySide6.QtCore import Q_ARG, QMetaObject
-    pages = ["Wallpapers", "Search", "Playback", "Audio", "Screens", "Performance", "Startup", "Diagnostic", "About"]
+    pages = [x for x in os.environ.get("WESPAN_SHOT_PAGES", "").split(",") if x] or \
+        ["Wallpapers", "Search", "Playback", "Audio", "Screens", "Performance", "Startup", "Diagnostic", "About"]
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
     def step(i=0):

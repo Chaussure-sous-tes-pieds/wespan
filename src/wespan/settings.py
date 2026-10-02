@@ -52,7 +52,11 @@ DEFAULTS = {
     "tray_icon": True,               # icône dans la zone de notification (fermer la fenêtre = la réduire)
     "native_video": True,            # fonds vidéo lus par Plasma (décodage GPU) plutôt que par WE/Proton
     "quit_engine_for_video": True,   # fermer Wallpaper Engine quand le fond est une vidéo (inutile alors)
-    "steam_api_key": "",             # clé Steam Web API, pour chercher dans le Workshop (page Rechercher)
+    "steam_api_key": "",
+    # bibliothèque : favoris, dossiers ([{"name": …, "ids": […]}]), réglages personnalisés des fonds
+    "favorites": [],
+    "folders": [],
+    "wallpaper_props": {},           # {id: {propriété: valeur}} (valeurs comme dans project.json)             # clé Steam Web API, pour chercher dans le Workshop (page Rechercher)
     "proton": "",                    # chemin du script proton (auto-détecté si vide)
 }
 

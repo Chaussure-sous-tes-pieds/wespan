@@ -8,7 +8,8 @@ url="https://github.com/Chaussure-sous-tes-pieds/wespan"
 license=('MIT')
 depends=('python' 'python-dbus' 'python-gobject' 'pyside6' 'kirigami' 'kpipewire' 'plasma-workspace'
          'kwin' 'wmctrl' 'xorg-xprop' 'libpulse' 'qt6-tools' 'kconfig' 'kpackage')
-optdepends=('steam: Wallpaper Engine is a Steam application')
+optdepends=('steam: Wallpaper Engine is a Steam application'
+            'ffmpeg: smooth looping of short video wallpapers')
 makedepends=('git')
 provides=('wespan')
 conflicts=('wespan')

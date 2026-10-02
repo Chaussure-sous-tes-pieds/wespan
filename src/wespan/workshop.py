@@ -30,6 +30,8 @@ SORTS = {
     "trend": ("trend", 3),
     "popular": ("totaluniquesubscribers", 9),
     "recent": ("mostrecent", 1),
+    "updated": ("lastupdated", 21),
+    "toprated": ("toprated", 0),
     "relevance": ("textsearch", 12),
 }
 
@@ -49,23 +51,24 @@ def _get(url: str, data: dict | None = None, timeout: float = 20) -> bytes:
 
 
 def search(text: str = "", sort: str = "trend", page: int = 1, kind: str = "", rating: str = "Everyone",
-           key: str = "") -> dict:
+           key: str = "", tags: list | tuple = (), days: int = 7) -> dict:
     """{"items": [...], "total": n, "page": p, "pages": n}. kind : "" ou un de TYPES ; rating : un de
     RATINGS ou "" (tous)."""
     sort = sort if sort in SORTS else "trend"
     if text and sort == "trend":
         sort = "relevance"
-    tags = [t for t in (kind, rating) if t]
+    tags = [t for t in (kind, rating, *tags) if t]
+    days = max(1, int(days or 7))
     if key:
-        return _search_api(text, sort, page, tags, key)
-    return _search_web(text, sort, page, tags)
+        return _search_api(text, sort, page, tags, key, days)
+    return _search_web(text, sort, page, tags, days)
 
 
-def _search_web(text, sort, page, tags):
+def _search_web(text, sort, page, tags, days=7):
     q = [("appid", WE_APPID), ("section", "readytouseitems"), ("browsesort", SORTS[sort][0]),
          ("actualsort", SORTS[sort][0]), ("p", str(page)), ("numperpage", str(PER_PAGE))]
     if sort == "trend":
-        q.append(("days", "7"))
+        q.append(("days", str(days)))
     if text:
         q.append(("searchtext", text))
     q += [("requiredtags[]", t) for t in tags]
@@ -77,12 +80,12 @@ def _search_web(text, sort, page, tags):
     return {"items": items, "total": total, "page": page, "pages": max(1, -(-total // PER_PAGE))}
 
 
-def _search_api(text, sort, page, tags, key):
+def _search_api(text, sort, page, tags, key, days=7):
     q = [("key", key), ("appid", WE_APPID), ("query_type", str(SORTS[sort][1])), ("page", str(page)),
          ("numperpage", str(PER_PAGE)), ("return_tags", "true"), ("return_previews", "true"),
          ("return_vote_data", "true"), ("match_all_tags", "true")]
     if sort == "trend":
-        q.append(("days", "7"))
+        q.append(("days", str(days)))
     if text:
         q.append(("search_text", text))
     q += [(f"requiredtags[{i}]", t) for i, t in enumerate(tags)]
