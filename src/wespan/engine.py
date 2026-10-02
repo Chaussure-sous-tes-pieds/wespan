@@ -135,15 +135,6 @@ def open_wallpaper(info: SteamInfo, project_json: Path, width: int, height: int,
                    "-playInWindow", title, "-width", str(width), "-height", str(height), "-borderless")
 
 
-def apply_properties(info: SteamInfo, title: str, props: dict) -> bool:
-    """Réglages personnalisables du fond (ceux de project.json → general.properties)."""
-    if not props:
-        return True
-    raw = "RAW~(" + json.dumps(props, ensure_ascii=False) + ")~END"
-    # (ordre des arguments : -location d'abord ; dans l'autre sens, WE répond par le code 4)
-    return control(info, "applyProperties", "-location", title, "-properties", raw)
-
-
 def close_wallpaper(info: SteamInfo, title: str) -> bool:
     """Ne ferme que la fenêtre portant ce titre, et attend que WE l'ait vraiment fait : une nouvelle
     commande pendant qu'il traite la précédente est ignorée (« Windows is reentrant »), voire le fait

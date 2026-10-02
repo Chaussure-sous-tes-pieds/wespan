@@ -16,7 +16,7 @@ Kirigami.Dialog {
 
     title: t("Personnaliser : ", "Customize: ") + (w.title || "")
     preferredWidth: Kirigami.Units.gridUnit * 30
-    preferredHeight: Math.min(applicationWindow().height - Kirigami.Units.gridUnit * 4, Kirigami.Units.gridUnit * 34)
+    preferredHeight: Kirigami.Units.gridUnit * 32
     standardButtons: Kirigami.Dialog.Close
     padding: Kirigami.Units.largeSpacing
 

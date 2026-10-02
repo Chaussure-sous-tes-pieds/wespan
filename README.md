@@ -99,7 +99,9 @@ is edited, so it is closed and restarted automatically).
   rating (with an API key), size, type; filters for age rating, resolution, genre/tag, source, audio
   responsive, customizable, approved. Popularity and resolution come from the Workshop (refreshed daily).
 - **Customize**: right-click → *Customize…* (or the gear on hover) shows the wallpaper's own settings (clock
-  format, colors, effects…), applied live and remembered for next time; *Reset to defaults* undoes them.
+  format, colors, effects…), remembered for next time; *Reset to defaults* undoes them. Wallpaper Engine ignores
+  setting changes in windowed mode, so WE Span opens a linked copy of the wallpaper with your values as its
+  defaults (`wallpaper_engine/projects/wespan-custom/`, nothing is duplicated): each change reloads it seamlessly.
 
 ### Finding new wallpapers
 
@@ -237,7 +239,7 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
   favoris (l'étoile), tri et filtres comme dans Wallpaper Engine (date d'ajout, mise à jour, popularité,
   résolution, genre, classement d'âge, réagit au son, personnalisable…).
 - **Personnaliser** : clic droit → *Personnaliser…* affiche les réglages propres au fond (format de l'horloge,
-  couleurs, effets…), appliqués en direct et mémorisés.
+  couleurs, effets…), mémorisés ; chaque changement recharge le fond (sans coupure visible).
 - **Rechercher** : parcourir le Steam Workshop depuis l'application (tendances sur un jour à un an, mieux
   notés, plus abonnés, récents, mis à jour ; filtres type, âge, genre, résolution…), sans clé API (une clé Steam Web API est facultative). *S'abonner* ouvre la page du fond
   dans Steam, et il apparaît dans *Fonds d'écran* une fois téléchargé.

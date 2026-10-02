@@ -13,7 +13,7 @@ import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 
-from . import desktop, engine, media, settings as S, steam
+from . import desktop, engine, media, overlay, settings as S, steam
 from .settings import DBUS_IFACE, DBUS_NAME, DBUS_PATH, RUNTIME_DIR, STATE_FILE, WINDOW_TITLE
 
 log = logging.getLogger("wespan")
@@ -411,6 +411,9 @@ class Daemon(dbus.service.Object):
             nonlocal pj
             self.open_pending = False
             pj = steam.wallpaper_path(info, self.cfg["wallpaper"]) or pj
+            # réglages personnalisés : WE ouvre une copie (liens) du fond avec vos valeurs par défaut
+            wid = self.cfg["wallpaper"]
+            pj = overlay.build(info, pj, wid, dict(self.cfg["wallpaper_props"].get(wid) or {}))
             self.opened_wallpaper = self.cfg["wallpaper"]
             if need_new:
                 desktop.ensure_rule(w, h)
@@ -447,11 +450,6 @@ class Daemon(dbus.service.Object):
             log.info("wallpaper %s opened at %dx%d (%s)", self.cfg["wallpaper"], w, h, new_title)
             self.tick()
             self.pause_tick(force=True)
-            props = self.cfg["wallpaper_props"].get(self.cfg["wallpaper"])
-            if props:
-                wid_title = new_title
-                self.worker.submit("props", lambda: (time.sleep(0.5),
-                                                     engine.apply_properties(info, wid_title, props))[1])
             if old_title and old_title != new_title:
                 # laisse le plugin basculer sur le nouveau flux avant de fermer l'ancien
                 GLib.timeout_add_seconds(3, lambda: (self.worker.submit(
@@ -729,8 +727,9 @@ class Daemon(dbus.service.Object):
         self.cfg["wallpaper_props"].setdefault(wid, {})[key] = val
         S.save(self.cfg)
         if wid == self.cfg["wallpaper"] and self.xid and not self.video_mode():
-            info, title = self.info, self.title
-            self.worker.submit("prop", lambda: engine.apply_properties(info, title, {key: val}))
+            # (WE ignore les changements de réglages en mode fenêtre : on rouvre le fond avec les
+            # nouvelles valeurs ; double tampon, l'ancien reste affiché pendant le chargement)
+            self.open_current()
         self.write_state()
         return True
 
@@ -741,6 +740,7 @@ class Daemon(dbus.service.Object):
         if self.cfg["wallpaper_props"].pop(str(wid), None) is None:
             return True
         S.save(self.cfg)
+        overlay.remove(self.info, str(wid))
         if str(wid) == self.cfg["wallpaper"] and self.xid and not self.video_mode():
             self.open_current(recreate=True)
         self.write_state()

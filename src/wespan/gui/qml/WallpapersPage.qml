@@ -56,6 +56,26 @@ Kirigami.ScrollablePage {
                 return backend.wallpapers.filter(w => (folderList[i].ids || []).indexOf(w.id) !== -1).length;
         return 0;
     }
+    // glisser-déposer d'un fond sur un dossier : on cherche nous-mêmes le dossier sous le pointeur
+    property var chips: []
+    property var dropChip: null           // dossier sous le pointeur pendant un glisser
+    function chipAt(item, x, y) {
+        const p = item.mapToItem(null, x, y);
+        for (let i = 0; i < chips.length; i++) {
+            const c = chips[i];
+            if (!c || !c.visible) continue;
+            const q = c.mapFromItem(null, p.x, p.y);
+            if (q.x >= 0 && q.y >= 0 && q.x <= c.width && q.y <= c.height) return c;
+        }
+        return null;
+    }
+    function dropOn(chip, id) {
+        if (!chip || !id) return;
+        if (chip.name === "__fav") { if (favs.indexOf(id) === -1) backend.toggleFavorite(id); }
+        else if (chip.name !== "") backend.moveToFolder(id, chip.name);
+        else backend.moveToFolder(id, "");          // « Tous » : sortir du dossier
+    }
+
     function allTags(w) { return (w.tags || []).concat(w.wsTags || []); }
 
     // valeurs présentes dans la bibliothèque (menus de filtres)
@@ -238,23 +258,13 @@ Kirigami.ScrollablePage {
         icon.name: iconName
         text: label + "  " + page.countIn(name)
         onClicked: page.folder = name
-        // déposer un fond sur un dossier pour l'y ranger
-        DropArea {
-            id: drop
-            anchors.fill: parent
-            keys: ["wespan/wallpaper"]
-            onDropped: (ev) => {
-                const id = ev.source ? ev.source.wid : "";
-                if (!id) return;
-                if (chip.name === "__fav") { if (page.favs.indexOf(id) === -1) backend.toggleFavorite(id); }
-                else backend.moveToFolder(id, chip.name);
-            }
-        }
-        Rectangle {
+        Component.onCompleted: page.chips = page.chips.concat([chip])
+        Component.onDestruction: page.chips = page.chips.filter(c => c !== chip)
+        Rectangle {     // dossier visé pendant un glisser
             anchors.fill: parent
             radius: Kirigami.Units.cornerRadius
             color: Kirigami.Theme.highlightColor
-            opacity: drop.containsDrag ? 0.35 : 0
+            opacity: page.dropChip === chip ? 0.35 : 0
         }
         TapHandler {
             acceptedButtons: Qt.RightButton
@@ -456,48 +466,55 @@ Kirigami.ScrollablePage {
                 QQC2.ToolTip.visible: hovered && !dragArea.drag.active
                 QQC2.ToolTip.delay: 900
 
-                // clic : appliquer ; glisser : ranger dans un dossier ; clic droit : menu
-                MouseArea {
-                    id: dragArea
-                    z: -0.5
-                    anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    drag.target: dragProxy
-                    drag.threshold: Kirigami.Units.gridUnit
-                    preventStealing: true          // sinon la grille défile au lieu de glisser le fond
-                    cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
-                    onPressed: (m) => { dragProxy.x = m.x; dragProxy.y = m.y; }
-                    onReleased: (m) => { if (drag.active) dragProxy.Drag.drop(); }
-                    onClicked: (m) => {
-                        if (m.button === Qt.RightButton) { cardMenu.w = cell.modelData; cardMenu.popup(); }
-                        else backend.setWallpaper(cell.modelData.id);
-                    }
-                }
-                Item {
-                    id: dragProxy
-                    width: 1; height: 1
-                    Drag.active: dragArea.drag.active
-                    Drag.keys: ["wespan/wallpaper"]
-                    Drag.source: cell
-                    Drag.hotSpot.x: 0; Drag.hotSpot.y: 0
-                    // vignette qui suit le pointeur pendant le glisser
-                    Rectangle {
-                        visible: dragArea.drag.active
-                        width: Kirigami.Units.gridUnit * 6; height: width * 9 / 16
-                        x: -width / 2; y: -height / 2
-                        radius: Kirigami.Units.cornerRadius
-                        color: "black"; opacity: 0.85
-                        clip: true
-                        Image {
-                            anchors.fill: parent
-                            source: cell.modelData.preview ? "file://" + cell.modelData.preview : ""
-                            fillMode: Image.PreserveAspectCrop
-                            sourceSize.width: 200
+                contentItem: Item {
+                    // clic : appliquer ; glisser : ranger dans un dossier ; clic droit : menu
+                    MouseArea {
+                        id: dragArea
+                        anchors.fill: parent
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        drag.target: dragProxy
+                        drag.threshold: Kirigami.Units.gridUnit
+                        preventStealing: true          // sinon la grille défile au lieu de glisser le fond
+                        cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                        property bool dragged: false     // un glisser n'est pas un clic
+                        drag.onActiveChanged: if (drag.active) dragged = true
+                        onPressed: (m) => { dragged = false; dragProxy.x = m.x; dragProxy.y = m.y; }
+                        onPositionChanged: (m) => {
+                            if (!drag.active) return;
+                            page.dropChip = page.chipAt(dragArea, m.x, m.y);
+                        }
+                        onReleased: (m) => {
+                            if (drag.active) page.dropOn(page.chipAt(dragArea, m.x, m.y), cell.modelData.id);
+                            page.dropChip = null;
+                        }
+                        onCanceled: page.dropChip = null
+                        onClicked: (m) => {
+                            if (m.button === Qt.RightButton) { cardMenu.w = cell.modelData; cardMenu.popup(); }
+                            else if (!dragged) backend.setWallpaper(cell.modelData.id);
                         }
                     }
-                }
+                    Item {
+                        id: dragProxy
+                        width: 1; height: 1
+                        // vignette qui suit le pointeur pendant le glisser
+                        Rectangle {
+                            visible: dragArea.drag.active
+                            width: Kirigami.Units.gridUnit * 6; height: width * 9 / 16
+                            x: -width / 2; y: -height / 2
+                            radius: Kirigami.Units.cornerRadius
+                            color: "black"; opacity: 0.85
+                            clip: true
+                            Image {
+                                anchors.fill: parent
+                                source: cell.modelData.preview ? "file://" + cell.modelData.preview : ""
+                                fillMode: Image.PreserveAspectCrop
+                                sourceSize.width: 200
+                            }
+                        }
+                    }
 
-                contentItem: ColumnLayout {
+                ColumnLayout {
+                    anchors.fill: parent
                     spacing: Kirigami.Units.smallSpacing
                     Rectangle {
                         Layout.fillWidth: true
@@ -560,6 +577,7 @@ Kirigami.ScrollablePage {
                         font.bold: cell.current
                         color: cell.current ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
                     }
+                }
                 }
             }
         }
