@@ -13,13 +13,14 @@ import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 
-from . import desktop, engine, settings as S, steam
+from . import desktop, engine, media, settings as S, steam
 from .settings import DBUS_IFACE, DBUS_NAME, DBUS_PATH, RUNTIME_DIR, STATE_FILE, WINDOW_TITLE
 
 log = logging.getLogger("wespan")
 
 TICK_S = 3
 LAUNCH_COOLDOWN = 90        # s entre deux lancements de WE
+STEAM_WAIT = 60             # s laissés à Steam pour lancer WE, avant de le lancer nous-mêmes par Proton
 OPEN_COOLDOWN = 30          # s entre deux réouvertures de la fenêtre
 WE_WARMUP = 12              # s laissés à WE pour démarrer avant d'ouvrir un fond
 GRACE_S = 6                 # s de lecture garantis après l'ouverture d'un fond (avant une éventuelle pause)
@@ -29,6 +30,7 @@ VERIFY_WINDOW = 600         # s après un changement d'écrans pendant lesquels 
 VERIFY_DELAY = 5            # s après l'ouverture avant de mesurer ce que WE dessine
 REOPEN_DELAYS = (10, 20, 40, 60, 120, 240)   # s avant chaque nouvel essai si WE dessine trop petit
 VIDEO_QUIT_DELAY = 60       # s de fond vidéo avant de fermer WE (inutile pour une vidéo)
+LONG_PAUSE = 120            # s : au-delà, on rouvre la scène à la reprise (horloges des fonds en retard)
 SNAPSHOT_EVERY = 600        # s entre deux captures de la dernière image (affichée à l'ouverture de session)
 
 
@@ -92,6 +94,10 @@ class Daemon(dbus.service.Object):
         self.video_since = 0.0
         self.last_snapshot = 0.0
         self.last_persist = ""
+        self.paused_since = 0.0
+        self.steam_launch_at = 0.0
+        self.direct_tried = False
+        self.loops = {}                      # vidéo -> version allongée (None : en cours / inutile)
         # dernière image gardée, et horloge vidéo de la session précédente (le fond Plasma a pu
         # commencer à jouer la vidéo avant le démarrage du service : on garde la même horloge)
         last = S.load_last_state()
@@ -148,6 +154,8 @@ class Daemon(dbus.service.Object):
     def _watch_session(self, bus):
         try:
             bus.add_signal_receiver(self._on_lock, "ActiveChanged", "org.freedesktop.ScreenSaver")
+            ss = bus.get_object("org.freedesktop.ScreenSaver", "/ScreenSaver")
+            self.locked = bool(ss.GetActive(dbus_interface="org.freedesktop.ScreenSaver"))
         except dbus.DBusException:
             pass
         try:
@@ -209,6 +217,17 @@ class Daemon(dbus.service.Object):
         f = pj.parent / str(p.get("file") or "")
         return kind, (f if kind == "video" and f.is_file() else None)
 
+    def loop_file(self, f):
+        """Vidéo courte : version allongée (copiée bout à bout, sans réencodage) si elle est prête.
+        Le lecteur marque un petit à-coup à chaque retour au début ; une boucle de 5 s en fait un
+        toutes les 5 s, la version longue une fois par minute environ."""
+        key = str(f)
+        if key not in self.loops:
+            self.loops[key] = None
+            self.worker.submit("loop", lambda: media.extended_loop(f),
+                               lambda res: (self.loops.__setitem__(key, res), res and self.write_state()))
+        return self.loops[key] or f
+
     def video_mode(self):
         """Fond vidéo lu directement par Plasma : décodage GPU, vraie fréquence d'image, et on évite
         le lecteur vidéo de WE sous Proton (saccadé, et il plante quand on enchaîne les vidéos)."""
@@ -237,11 +256,21 @@ class Daemon(dbus.service.Object):
             if self.paused:
                 self.paused = False
             if self.cfg["start_engine"] and not self.user_stopped and self.info.ok and not self.video_mode() \
-                    and now - self.last_launch > LAUNCH_COOLDOWN and not self.worker.busy:
-                if self.last_launch == 0 or self.cfg["restart_engine"]:
-                    self.last_launch = now
+                    and not self.worker.busy and not self.locked:
+                # (session verrouillée : l'interface de Steam ne se dessine plus et reste bloquée avant le
+                # lancement ; on attend le déverrouillage)
+                if self.steam_launch_at and now - self.steam_launch_at > STEAM_WAIT and not self.direct_tried:
+                    # Steam n'a rien lancé (fenêtre en attente d'une réponse…) : on passe par Proton
+                    self.direct_tried = True
+                    log.warning("Steam did not start Wallpaper Engine within %d s: starting it through Proton",
+                                STEAM_WAIT)
+                    engine.launch_direct(self.info)
+                elif now - self.last_launch > LAUNCH_COOLDOWN and (self.last_launch == 0 or self.cfg["restart_engine"]):
+                    self.last_launch = self.steam_launch_at = now
+                    self.direct_tried = False
                     engine.launch_via_steam()
         elif self.video_mode():
+            self.steam_launch_at = 0.0
             if not self.we_seen_since:
                 self.we_seen_since = now
             if self.paused:                           # rien ne doit rester gelé
@@ -263,6 +292,7 @@ class Daemon(dbus.service.Object):
                     self.worker.submit("close-scenes", lambda: [engine.close_wallpaper(info, t) for t in wins])
             self.xid = None
         else:
+            self.steam_launch_at = 0.0
             if not self.we_seen_since:
                 self.we_seen_since = now
             if not self.info.ok or not self.info.proton or not self.info.proton.exists():
@@ -494,6 +524,14 @@ class Daemon(dbus.service.Object):
             if not self.worker.busy and engine.we_pid() and engine.freeze(want):
                 if want != self.paused:
                     log.info("%s (%s)", "paused" if want else "playing", reason or "-")
+                    if want:
+                        self.paused_since = now
+                    elif self.paused_since and now - self.paused_since > LONG_PAUSE and self.xid:
+                        # WE gelé longtemps : les minuteries des scènes (horloges, dates…) ne rattrapent
+                        # pas le temps perdu. Une ouverture neuve repart à l'heure (double tampon : invisible).
+                        log.info("resumed after %d min: re-opening the scene so its clock is right",
+                                 (now - self.paused_since) / 60)
+                        self.reopen_at = now + 1
                 self.paused = want
             self.pause_reason = reason if want else ""
             self.write_state()
@@ -531,7 +569,8 @@ class Daemon(dbus.service.Object):
             "screens": self.screens, "busy": self.worker.busy, "message": self.message,
             "lang": S.language(self.cfg),
             "mode": "video" if vfile else "scene",
-            "video": vfile and {"path": str(vfile), "epoch": int(self.video_epoch * 1000),
+            "video": vfile and {"path": str(self.loop_file(vfile)), "orig": str(vfile),
+                                "epoch": int(self.video_epoch * 1000),
                                 "pausedPos": None if self.video_paused_pos is None else int(self.video_paused_pos * 1000)},
             "audioScreen": self.screens[0]["name"] if self.screens else "",
             "frame": self.frame_state(w, h),

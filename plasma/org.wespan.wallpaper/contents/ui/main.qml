@@ -86,7 +86,7 @@ WallpaperItem {
         // image de la scène (fenêtre WE entière, même rectangle que le flux), sinon l'aperçu du fond
         readonly property bool waiting: !root.videoShowing && !streamA.showing && !streamB.showing
         Image {
-            id: lastFrame
+            id: frameImage
             x: root.originX; y: root.originY
             width: root.winW * root.zoomF; height: root.winH * root.zoomF
             source: root.st.frame ? "file://" + root.st.frame.path + "?" + root.st.frame.time : ""
@@ -101,7 +101,7 @@ WallpaperItem {
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             cache: false
-            visible: viewport.waiting && !lastFrame.visible && status === Image.Ready
+            visible: viewport.waiting && !frameImage.visible && status === Image.Ready
             opacity: 0.85
         }
 
@@ -141,7 +141,12 @@ WallpaperItem {
 
     // --- fonds vidéo natifs ----------------------------------------------------------------
     readonly property bool videoMode: st.mode === "video" && !!st.video
-    readonly property string videoSource: videoMode ? "file://" + st.video.path : ""
+    // version allongée des boucles courtes (préparée par le service) ; si elle manque (cache vidé…),
+    // on revient à la vidéo d'origine
+    property string brokenPath: ""
+    readonly property string videoFile: !videoMode ? ""
+        : (st.video.orig && st.video.path === brokenPath) ? st.video.orig : st.video.path
+    readonly property string videoSource: videoFile ? "file://" + videoFile : ""
     // une vraie image est arrivée depuis le (re)chargement : l'aperçu flou peut disparaître
     property double lastFrame: 0
     property double loadStart: 0
@@ -180,6 +185,12 @@ WallpaperItem {
             volume: Math.min(1.5, (root.st.volume !== undefined ? root.st.volume : 100) / 100)
         }
         onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) root.syncVideo(true)
+        onErrorOccurred: (error, msg) => {
+            if (root.videoMode && root.st.video.orig && root.videoFile !== root.st.video.orig) {
+                console.warn("WE Span: vidéo illisible, retour à l'originale :", msg);
+                root.brokenPath = root.st.video.path;
+            }
+        }
     }
     function videoTarget() {
         if (!player.duration) return 0;

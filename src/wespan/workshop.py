@@ -18,6 +18,13 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) WE-Span"
 TYPES = ("Scene", "Video", "Web", "Application")
 RATINGS = ("Everyone", "Questionable", "Mature")
 NOISE_TAGS = ("Wallpaper", "Approved")
+# tags de résolution du Workshop (« 3840 x 2160 », « Dual Monitor »…)
+RES_TAG = re.compile(r"^(\d+ x \d+|Dual Monitor|Triple Monitor|Ultrawide.*|Portrait.*|Other resolution)$", re.I)
+GENRES = ("Abstract", "Animal", "Anime", "Cartoon", "CGI", "Cyberpunk", "Fantasy", "Game", "Girls", "Guys",
+          "Landscape", "Medieval", "Memes", "MMD", "Music", "Nature", "Pixel art", "Relaxing", "Retro", "Sci-Fi",
+          "Sports", "Technology", "Television", "Vehicle", "Unspecified")
+RESOLUTIONS = ("1280 x 720", "1920 x 1080", "2560 x 1440", "3840 x 2160", "Ultrawide Standard",
+               "Ultrawide Quad HD", "Dual Monitor", "Triple Monitor", "Portrait Full HD", "Other resolution")
 # tri de l'appli -> (page web, QueryFiles query_type)
 SORTS = {
     "trend": ("trend", 3),
@@ -89,9 +96,19 @@ def _search_api(text, sort, page, tags, key):
     return {"items": items, "total": total, "page": page, "pages": max(1, -(-total // PER_PAGE))}
 
 
-def details(ids: list[str]) -> list[dict]:
+def details(ids: list[str], key: str = "") -> list[dict]:
     if not ids:
         return []
+    if key:     # avec clé : on a aussi la note (votes)
+        q = [("key", key), ("includetags", "true"), ("includevotes", "true")]
+        q += [(f"publishedfileids[{i}]", v) for i, v in enumerate(ids)]
+        try:
+            files = json.loads(_get("https://api.steampowered.com/IPublishedFileService/GetDetails/v1/?"
+                                    + urllib.parse.urlencode(q)))["response"]["publishedfiledetails"]
+            by_id = {f.get("publishedfileid"): f for f in files if f.get("result") == 1}
+            return [_item(by_id[i]) for i in ids if i in by_id]
+        except (WorkshopError, ValueError, KeyError):
+            pass                                  # clé refusée : on fait sans
     data = {"itemcount": str(len(ids))}
     data.update({f"publishedfileids[{i}]": v for i, v in enumerate(ids)})
     try:
@@ -116,11 +133,27 @@ def _item(d: dict) -> dict:
         "preview": preview,
         "type": kind.lower(),
         "rating": next((t for t in tags if t in RATINGS), ""),
-        "tags": [t for t in tags if t not in TYPES and t not in RATINGS and t not in NOISE_TAGS],
+        "tags": [t for t in tags if t not in TYPES and t not in RATINGS and t not in NOISE_TAGS
+                 and not RES_TAG.match(t)],
+        "resolution": next((t for t in tags if RES_TAG.match(t)), ""),
+        "approved": "Approved" in tags,
         "size": int(d.get("file_size") or 0),
         "subs": int(d.get("lifetime_subscriptions") or d.get("subscriptions") or 0),
+        "favorited": int(d.get("lifetime_favorited") or d.get("favorited") or 0),
+        "views": int(d.get("views") or 0),
         "score": float(votes.get("score") or 0),
+        "created": int(d.get("time_created") or 0),
+        "updated": int(d.get("time_updated") or 0),
     }
+
+
+def details_many(ids: list[str], key: str = "", chunk: int = 50) -> dict:
+    """{id: item} pour beaucoup d'identifiants (par paquets)."""
+    out = {}
+    for i in range(0, len(ids), chunk):
+        for it in details(ids[i:i + chunk], key):
+            out[it["id"]] = it
+    return out
 
 
 def page_url(wid: str) -> str:

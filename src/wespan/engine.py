@@ -60,6 +60,23 @@ def launch_via_steam() -> None:
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
+def launch_direct(info: SteamInfo) -> bool:
+    """Sans Steam (son interface peut rester bloquée sur une fenêtre avant le lancement) : directement
+    par Proton, dans le même préfixe."""
+    if not info.ok:
+        return False
+    env = info.env()
+    env.update({"SteamAppId": WE_APPID, "SteamGameId": WE_APPID, "WINE_DISABLE_FULLSCREEN_HACK": "1"})
+    try:
+        subprocess.Popen([str(info.proton), "run", win_path(info, info.we_dir / "wallpaper64.exe")], env=env,
+                         cwd=str(info.we_dir), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return True
+    except OSError as e:
+        log.warning("direct launch failed: %s", e)
+        return False
+
+
 def quit_engine(timeout: float = 15) -> None:
     pid = we_pid()
     if not pid:

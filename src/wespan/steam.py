@@ -2,6 +2,7 @@
 import glob
 import json
 import os
+import subprocess
 import re
 from pathlib import Path
 
@@ -279,14 +280,67 @@ def set_we_fps(info: SteamInfo, fps: int) -> bool:
 
 # --- Workshop -------------------------------------------------------------------------------
 
+def _workshop_manifest(info: SteamInfo) -> dict:
+    """{id: {"size", "updated", "subscribed"}} d'après appworkshop_431960.acf (tenu par Steam)."""
+    out = {}
+    if not info.workshop:
+        return out
+    try:
+        data = vdf_parse((info.workshop.parent.parent / f"appworkshop_{WE_APPID}.acf").read_text(errors="replace"))
+    except OSError:
+        return out
+    for wid, e in vdf_get(data, "AppWorkshop", "WorkshopItemsInstalled") or []:
+        if isinstance(e, list):
+            out.setdefault(wid, {})["size"] = int(vdf_get(e, "size") or 0)
+            out[wid]["updated"] = int(vdf_get(e, "timeupdated") or 0)
+    return out
+
+
+def _birth_times(dirs: list[Path]) -> dict:
+    """Date de création des dossiers (= date d'ajout du fond), via stat %W (statx)."""
+    if not dirs:
+        return {}
+    try:
+        out = subprocess.run(["stat", "-c", "%W %n", *map(str, dirs)], capture_output=True, text=True,
+                             timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    res = {}
+    for line in out.splitlines():
+        t, _, name = line.partition(" ")
+        if t.isdigit() and int(t) > 0:
+            res[name] = int(t)
+    return res
+
+
+def _dir_size(d: Path) -> int:
+    total = 0
+    for root, _, files in os.walk(d):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+def user_properties(p: dict) -> dict:
+    """Réglages personnalisables du fond (general.properties de project.json), sans les
+    simples libellés."""
+    props = (p.get("general") or {}).get("properties") or {}
+    return {k: v for k, v in props.items() if isinstance(v, dict) and v.get("type") not in (None, "text", "group")}
+
+
 def list_wallpapers(info: SteamInfo) -> list[dict]:
     out = []
     dirs = []
     if info.workshop and info.workshop.is_dir():
-        dirs += sorted(info.workshop.iterdir())
+        dirs += [(d, "workshop") for d in sorted(info.workshop.iterdir())]
     if info.we_dir and (info.we_dir / "projects/myprojects").is_dir():
-        dirs += sorted((info.we_dir / "projects/myprojects").iterdir())
-    for d in dirs:
+        dirs += [(d, "mine") for d in sorted((info.we_dir / "projects/myprojects").iterdir())]
+    man = _workshop_manifest(info)
+    born = _birth_times([d for d, _ in dirs])
+    for d, source in dirs:
         pj = d / "project.json"
         try:
             p = json.loads(pj.read_text(encoding="utf-8-sig"))
@@ -294,6 +348,9 @@ def list_wallpapers(info: SteamInfo) -> list[dict]:
             continue
         prev = p.get("preview") or ""
         prev = str(d / prev) if prev and (d / prev).exists() else ""
+        m = man.get(d.name, {})
+        mtime = int(pj.stat().st_mtime)
+        props = user_properties(p)
         out.append({
             "id": d.name,
             "path": str(pj),
@@ -301,7 +358,14 @@ def list_wallpapers(info: SteamInfo) -> list[dict]:
             "type": str(p.get("type") or "").lower(),
             "preview": prev,
             "tags": p.get("tags") or [],
-            "mtime": int(pj.stat().st_mtime),
+            "rating": str(p.get("contentrating") or "Everyone"),
+            "source": source,
+            "audio": bool((p.get("general") or {}).get("supportsaudioprocessing")),
+            "customizable": any(k != "schemecolor" for k in props),
+            "size": m.get("size") or _dir_size(d),
+            "added": born.get(str(d)) or int(d.stat().st_mtime),
+            "updated": m.get("updated") or mtime,
+            "mtime": mtime,
         })
     return out
 
