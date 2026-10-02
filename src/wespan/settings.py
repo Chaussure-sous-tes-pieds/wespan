@@ -52,17 +52,18 @@ DEFAULTS = {
     "tray_icon": True,               # icône dans la zone de notification (fermer la fenêtre = la réduire)
     "native_video": True,            # fonds vidéo lus par Plasma (décodage GPU) plutôt que par WE/Proton
     "quit_engine_for_video": True,   # fermer Wallpaper Engine quand le fond est une vidéo (inutile alors)
-    "steam_api_key": "",
+    "steam_api_key": "",             # clé Steam Web API (facultative), pour la page Rechercher
     # bibliothèque : favoris, dossiers ([{"name": …, "ids": […]}]), réglages personnalisés des fonds
     "favorites": [],
     "folders": [],
-    "wallpaper_props": {},           # {id: {propriété: valeur}} (valeurs comme dans project.json)             # clé Steam Web API, pour chercher dans le Workshop (page Rechercher)
+    "wallpaper_props": {},           # {id: {propriété: valeur}} (valeurs comme dans project.json)
     "proton": "",                    # chemin du script proton (auto-détecté si vide)
 }
 
 
 def load() -> dict:
-    data = dict(DEFAULTS)
+    import copy
+    data = copy.deepcopy(DEFAULTS)      # (les listes/dicts par défaut ne doivent pas être partagés)
     try:
         data.update(json.loads(SETTINGS_FILE.read_text()))
     except (OSError, ValueError):

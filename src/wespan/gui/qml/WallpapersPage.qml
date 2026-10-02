@@ -31,6 +31,8 @@ Kirigami.ScrollablePage {
         property alias ratingFilter: page.ratingFilter
     }
 
+    // tri mémorisé qui n'est plus proposé (note sans clé API…) : retour au nom
+    readonly property string effectiveSort: sortMode === "score" && !haveScores ? "title" : sortMode
     readonly property var favs: backend.favorites
     readonly property var folderList: backend.folders
     readonly property int extraFilters: (ratingFilter ? 1 : 0) + (resFilter ? 1 : 0) + (tagFilter ? 1 : 0)
@@ -87,8 +89,8 @@ Kirigami.ScrollablePage {
         const dir = sortDesc ? -1 : 1;
         l.sort((a, b) => {
             let c = 0;
-            if (sortMode === "type") c = (a.type || "").localeCompare(b.type || "");
-            else if (num[sortMode]) c = (a[sortMode] || 0) - (b[sortMode] || 0);
+            if (effectiveSort === "type") c = (a.type || "").localeCompare(b.type || "");
+            else if (num[effectiveSort]) c = (a[effectiveSort] || 0) - (b[effectiveSort] || 0);
             else c = a.title.localeCompare(b.title);
             return c !== 0 ? c * dir : a.title.localeCompare(b.title);
         });
@@ -155,7 +157,8 @@ Kirigami.ScrollablePage {
                 QQC2.ComboBox {
                     textRole: "label"; valueRole: "value"
                     model: page.sorts.filter(s => s.value !== "score" || page.haveScores)
-                    Component.onCompleted: currentIndex = Math.max(0, indexOfValue(page.sortMode))
+                    // (le modèle change quand la langue change ou que les notes arrivent : on resynchronise)
+                    currentIndex: Math.max(0, model.findIndex(s => s.value === page.sortMode))
                     onActivated: { page.sortMode = currentValue; page.sortDesc = model[currentIndex].desc; }
                 }
                 QQC2.ToolButton {
@@ -461,6 +464,7 @@ Kirigami.ScrollablePage {
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     drag.target: dragProxy
                     drag.threshold: Kirigami.Units.gridUnit
+                    preventStealing: true          // sinon la grille défile au lieu de glisser le fond
                     cursorShape: drag.active ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                     onPressed: (m) => { dragProxy.x = m.x; dragProxy.y = m.y; }
                     onReleased: (m) => { if (drag.active) dragProxy.Drag.drop(); }

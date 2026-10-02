@@ -45,21 +45,106 @@ def _localization(general: dict, lang: str) -> dict:
     return {}
 
 
+_TOKEN = re.compile(r"\s*(?:(?P<num>-?\d+(?:\.\d+)?)|(?P<str>'[^']*'|\"[^\"]*\")|(?P<ref>[A-Za-z_]\w*\.value)"
+                    r"|(?P<word>true|false|null|undefined)|(?P<op>===|!==|==|!=|<=|>=|&&|\|\||[<>!()]))")
+
+
 def condition_ok(cond: str, values: dict) -> bool:
-    """Évalue une condition de Wallpaper Engine (syntaxe JavaScript simple). En cas de doute : vrai."""
+    """Évalue une condition de Wallpaper Engine (« a.value==true && (b.value==1 || !c.value) »).
+    Petit analyseur dédié, sans eval : seulement comparaisons, &&, ||, ! et parenthèses. Une
+    expression non reconnue compte comme vraie (le réglage reste affiché)."""
     if not cond or not str(cond).strip():
         return True
-    expr = str(cond)
-    expr = re.sub(r"([A-Za-z_]\w*)\.value", lambda m: repr(values.get(m[1])), expr)
-    expr = expr.replace("&&", " and ").replace("||", " or ").replace("===", "==").replace("!==", "!=")
-    expr = re.sub(r"!(?!=)", " not ", expr)
-    expr = re.sub(r"\btrue\b", "True", expr)
-    expr = re.sub(r"\bfalse\b", "False", expr)
-    if re.search(r"[A-Za-z_]\w*\s*\(|__|\[|lambda|import", expr):
-        return True
+    text, toks, pos = str(cond), [], 0
+    while pos < len(text):
+        m = _TOKEN.match(text, pos)
+        if not m or m.end() == pos:
+            if text[pos:].strip() == "":
+                break
+            return True
+        pos = m.end()
+        kind = m.lastgroup
+        v = m[kind]
+        if kind == "num":
+            toks.append(("val", float(v)))
+        elif kind == "str":
+            toks.append(("val", v[1:-1]))
+        elif kind == "ref":
+            toks.append(("val", values.get(v[:-6])))
+        elif kind == "word":
+            toks.append(("val", {"true": True, "false": False}.get(v)))
+        else:
+            toks.append(("op", v))
+        if len(toks) > 200:
+            return True
+    i = 0
+
+    def peek():
+        return toks[i] if i < len(toks) else ("end", None)
+
+    def take():
+        nonlocal i
+        i += 1
+        return toks[i - 1]
+
+    def num(v):
+        if isinstance(v, bool) or v is None:
+            return v
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return v
+
+    def atom():
+        k, v = take()
+        if k == "op" and v == "!":
+            return not atom()
+        if k == "op" and v == "(":
+            r = orexpr()
+            if take() != ("op", ")"):
+                raise ValueError
+            return r
+        if k == "val":
+            return v
+        raise ValueError
+
+    def cmp():
+        left = atom()
+        while peek()[0] == "op" and peek()[1] in ("==", "!=", "===", "!==", "<", ">", "<=", ">="):
+            op = take()[1]
+            right = atom()
+            a, b = num(left), num(right)
+            if op in ("==", "==="):
+                left = a == b
+            elif op in ("!=", "!=="):
+                left = a != b
+            else:
+                try:
+                    left = {"<": a < b, ">": a > b, "<=": a <= b, ">=": a >= b}[op]
+                except TypeError:
+                    left = False
+        return left
+
+    def andexpr():
+        r = cmp()
+        while peek() == ("op", "&&"):
+            take()
+            r = bool(cmp()) and bool(r)
+        return r
+
+    def orexpr():
+        r = andexpr()
+        while peek() == ("op", "||"):
+            take()
+            r = bool(andexpr()) or bool(r)
+        return r
+
     try:
-        return bool(eval(expr, {"__builtins__": {}}, {}))   # noqa: S307 - expression filtrée ci-dessus
-    except Exception:  # noqa: BLE001
+        r = orexpr()
+        if i != len(toks):
+            return True
+        return bool(r)
+    except (ValueError, IndexError):
         return True
 
 

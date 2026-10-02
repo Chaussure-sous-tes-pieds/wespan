@@ -224,8 +224,11 @@ class Daemon(dbus.service.Object):
         key = str(f)
         if key not in self.loops:
             self.loops[key] = None
-            self.worker.submit("loop", lambda: media.extended_loop(f),
-                               lambda res: (self.loops.__setitem__(key, res), res and self.write_state()))
+
+            def run():      # ffmpeg à part : le Worker reste libre pour WE (pause, ouvertures…)
+                res = media.extended_loop(f)
+                GLib.idle_add(lambda: (self.loops.__setitem__(key, res), res and self.write_state(), False)[-1])
+            threading.Thread(target=run, daemon=True).start()
         return self.loops[key] or f
 
     def video_mode(self):
@@ -346,7 +349,8 @@ class Daemon(dbus.service.Object):
             return
         if not self.verify_at and self.xid and now - self.last_snapshot > SNAPSHOT_EVERY:
             self.verify_at = now
-        if not (self.verify_at and now > self.verify_at and self.xid and not self.paused):
+        # (session verrouillée : KWin n'affiche plus la fenêtre de WE, sa capture serait noire)
+        if not (self.verify_at and now > self.verify_at and self.xid and not self.paused and not self.locked):
             return
         self.verify_at = 0.0
         self.last_snapshot = now
@@ -516,7 +520,10 @@ class Daemon(dbus.service.Object):
         pid = engine.we_pid()
         if pid and not self.worker.busy:
             # l'état réel peut avoir changé derrière nous (commande -control externe, SIGCONT…)
-            self.paused = engine.is_stopped(pid)
+            stopped = engine.is_stopped(pid)
+            if stopped != self.paused:
+                self.paused_since = now if stopped else 0.0
+            self.paused = stopped
         if want != self.paused or force:
             if want and not force and reason not in ("manual", "locked"):
                 if not self.want_since:
@@ -537,6 +544,8 @@ class Daemon(dbus.service.Object):
                         log.info("resumed after %d min: re-opening the scene so its clock is right",
                                  (now - self.paused_since) / 60)
                         self.reopen_at = now + 1
+                    if not want:
+                        self.paused_since = 0.0
                 self.paused = want
             self.pause_reason = reason if want else ""
             self.write_state()
@@ -725,16 +734,17 @@ class Daemon(dbus.service.Object):
         self.write_state()
         return True
 
-    @dbus.service.method(DBUS_IFACE, in_signature="s", out_signature="")
+    @dbus.service.method(DBUS_IFACE, in_signature="s", out_signature="b")
     def ResetWallpaperProperties(self, wid):
         """Retour aux réglages d'origine : on rouvre le fond s'il est affiché (WE repart des valeurs
         de project.json)."""
         if self.cfg["wallpaper_props"].pop(str(wid), None) is None:
-            return
+            return True
         S.save(self.cfg)
         if str(wid) == self.cfg["wallpaper"] and self.xid and not self.video_mode():
             self.open_current(recreate=True)
         self.write_state()
+        return True
 
     @dbus.service.method(DBUS_IFACE, in_signature="i", out_signature="")
     def SetVolume(self, v):

@@ -79,7 +79,11 @@ class Backend(QObject):
         raw = self._call("GetState")
         st = json.loads(raw) if raw else {}
         if st != self._state:
+            lib = lambda d: [(d.get("settings") or {}).get(k) for k in ("favorites", "folders", "wallpaper_props")]
+            changed_lib = lib(st) != lib(self._state)
             self._state = st
+            if changed_lib:
+                self.libraryChanged.emit()
             if st.get("lang") and st["lang"] != self._lang and self._dump is None:
                 self._lang = st["lang"]
                 self.langChanged.emit()
@@ -338,8 +342,9 @@ class Backend(QObject):
     def refreshMeta(self):
         """En arrière-plan : détails des fonds du Workshop inconnus ou vieux d'un jour."""
         import time
-        if self._meta_running:
-            return
+        if self._meta_running or time.time() - getattr(self, "_meta_tried", 0) < 600:
+            return            # (hors ligne : un essai toutes les 10 min au plus)
+        self._meta_tried = time.time()
         fetched = self._meta.get("fetched", {})
         now = time.time()
         ids = [w["id"] for w in self._wallpapers if w.get("source") == "workshop" and w["id"].isdigit()
@@ -385,13 +390,16 @@ class Backend(QObject):
         self.poll()
         self.libraryChanged.emit()
 
-    @Property("QVariantList", notify=stateChanged)
+    # (copies profondes : modifier la copie ne doit pas toucher _state, sinon poll() ne voit aucun
+    # changement et l'interface ne se rafraîchit pas)
+    @Property("QVariantList", notify=libraryChanged)
     def favorites(self):
         return list(self._cfg_now().get("favorites") or [])
 
-    @Property("QVariantList", notify=stateChanged)
+    @Property("QVariantList", notify=libraryChanged)
     def folders(self):
-        return list(self._cfg_now().get("folders") or [])
+        import copy
+        return copy.deepcopy(list(self._cfg_now().get("folders") or []))
 
     @Slot(str)
     def toggleFavorite(self, wid):
@@ -474,7 +482,7 @@ class Backend(QObject):
 
     @Slot(str)
     def resetWallpaperProperties(self, wid):
-        if self._call("ResetWallpaperProperties", wid) is None:
+        if not self._call("ResetWallpaperProperties", wid):
             cfg = S.load(); cfg.get("wallpaper_props", {}).pop(wid, None); S.save(cfg)
         self.poll()
         self.libraryChanged.emit()
