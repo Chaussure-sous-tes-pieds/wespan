@@ -71,8 +71,19 @@ def load() -> dict:
     return data
 
 
+BACKUP_EVERY = 3600          # s : copie de sauvegarde des réglages au plus une fois par heure
+
+
 def save(data: dict) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    # copie de sauvegarde (dossiers, favoris… : une mauvaise écriture ne doit pas tout perdre)
+    bak = SETTINGS_FILE.with_suffix(".json.bak")
+    try:
+        import shutil, time
+        if SETTINGS_FILE.is_file() and (not bak.exists() or time.time() - bak.stat().st_mtime > BACKUP_EVERY):
+            shutil.copy2(SETTINGS_FILE, bak)
+    except OSError:
+        pass
     tmp = SETTINGS_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps({k: data[k] for k in DEFAULTS if k in data}, indent=1, ensure_ascii=False))
     tmp.replace(SETTINGS_FILE)

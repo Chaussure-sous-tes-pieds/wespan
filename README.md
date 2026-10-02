@@ -93,7 +93,7 @@ is edited, so it is closed and restarted automatically).
 ### Your library
 
 - **Folders**: create folders in *Wallpapers*, then right-click a wallpaper → *Move to folder* (or drag it onto
-  a folder). Right-click a folder to rename, reorder or delete it (the wallpapers stay).
+  a folder). Right-click a folder to rename, reorder, delete it (the wallpapers stay) or hide it from *All*.
 - **Favorites**: click a wallpaper's star; favorites come first and have their own view.
 - **Sort and filter like Wallpaper Engine**: name, date added, last updated, popularity, Workshop favorites,
   rating (with an API key), size, type; filters for age rating, resolution, genre/tag, source, audio
@@ -235,7 +235,8 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
 - Icône dans la zone de notification (optionnelle, activée par défaut) : clic pour afficher/masquer la
   fenêtre, menu pause/son. Le fond continue de tourner même application fermée.
 - Clic droit sur le bureau : couper/remettre le son, pause/reprise, réglages.
-- **Bibliothèque** : dossiers (clic droit sur un fond → *Ranger dans*, ou glisser-déposer sur le dossier),
+- **Bibliothèque** : dossiers (clic droit sur un fond → *Ranger dans*, ou glisser-déposer sur le dossier ;
+  clic droit sur un dossier → *Masquer dans « Tous »* pour l'exclure),
   favoris (l'étoile), tri et filtres comme dans Wallpaper Engine (date d'ajout, mise à jour, popularité,
   résolution, genre, classement d'âge, réagit au son, personnalisable…).
 - **Personnaliser** : clic droit → *Personnaliser…* affiche les réglages propres au fond (format de l'horloge,

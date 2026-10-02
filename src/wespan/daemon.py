@@ -27,8 +27,9 @@ GRACE_S = 6                 # s de lecture garantis après l'ouverture d'un fond
 LAYOUT_SETTLE = 8           # s de disposition d'écrans stable avant de recréer la fenêtre
 X_SCREEN_WAIT = 30          # s max à attendre que l'écran Xwayland ait la nouvelle taille
 VERIFY_WINDOW = 600         # s après un changement d'écrans pendant lesquels on vérifie chaque ouverture
-VERIFY_DELAY = 5            # s après l'ouverture avant de mesurer ce que WE dessine
+VERIFY_DELAY = 3            # s après l'ouverture avant de mesurer ce que WE dessine
 REOPEN_DELAYS = (10, 20, 40, 60, 120, 240)   # s avant chaque nouvel essai si WE dessine trop petit
+REOPEN_DELAYS_QUICK = (2, 8, 30)             # (pareil, hors changement d'écrans : souvent bon du 1er coup)
 VIDEO_QUIT_DELAY = 60       # s de fond vidéo avant de fermer WE (inutile pour une vidéo)
 LONG_PAUSE = 120            # s : au-delà, on rouvre la scène à la reprise (horloges des fonds en retard)
 SNAPSHOT_EVERY = 600        # s entre deux captures de la dernière image (affichée à l'ouverture de session)
@@ -97,6 +98,9 @@ class Daemon(dbus.service.Object):
         self.paused_since = 0.0
         self.steam_launch_at = 0.0
         self.direct_tried = False
+        self.verify_open = False
+        self.last_bad = None                 # (fond, zone dessinée) de la dernière mesure trop petite
+        self.dark_edge = set()               # fonds réellement noirs sur un bord (on ne rouvre plus)
         self.loops = {}                      # vidéo -> version allongée (None : en cours / inutile)
         # dernière image gardée, et horloge vidéo de la session précédente (le fond Plasma a pu
         # commencer à jouer la vidéo avant le démarrage du service : on garde la même horloge)
@@ -349,6 +353,7 @@ class Daemon(dbus.service.Object):
             return
         if not self.verify_at and self.xid and now - self.last_snapshot > SNAPSHOT_EVERY:
             self.verify_at = now
+            self.verify_open = False             # capture périodique : on ne rouvre jamais pour ça
         # (session verrouillée : KWin n'affiche plus la fenêtre de WE, sa capture serait noire)
         if not (self.verify_at and now > self.verify_at and self.xid and not self.paused and not self.locked):
             return
@@ -356,6 +361,7 @@ class Daemon(dbus.service.Object):
         self.last_snapshot = now
         xid, wid = self.xid, self.opened_wallpaper or self.cfg["wallpaper"]
         after_layout = now - self.layout_changed < VERIFY_WINDOW
+        after_open, self.verify_open = self.verify_open, False
         S.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         tmp = S.FRAME_FILE.with_suffix(".tmp.jpg")
 
@@ -366,19 +372,31 @@ class Daemon(dbus.service.Object):
                 if self.bad_renders:
                     log.info("render OK at %dx%d after %d re-open(s)", w, h, self.bad_renders)
                 self.bad_renders = 0
+                self.last_bad = None
                 if wid == self.cfg["wallpaper"] and tmp.is_file():
                     tmp.replace(S.FRAME_FILE)
                     self.frame = {"wallpaper": wid, "size": [w, h], "time": int(time.time())}
                     self.write_state()
                 return
             tmp.unlink(missing_ok=True)
-            if not after_layout:
-                return          # scène sombre sur un bord, sans doute : on ne garde pas l'image, c'est tout
-            if self.bad_renders >= len(REOPEN_DELAYS):
+            # Même sans changement d'écrans, WE dessine parfois une nouvelle fenêtre à une ancienne taille
+            # (dans un coin, le reste noir) : on rouvre. Mais une scène peut aussi être noire sur un bord :
+            # deux mesures identiques de suite => c'est le fond lui-même, on n'insiste plus pour lui.
+            if not after_open or wid in self.dark_edge:
+                return
+            same = self.last_bad and self.last_bad[0] == (wid, tuple(ext))
+            self.last_bad = ((wid, tuple(ext)), (self.last_bad[1] + 1) if same else 1)
+            if not after_layout and self.last_bad[1] >= 3:      # 3 mesures identiques (2 réouvertures)
+                log.info("wallpaper %s is dark up to its edge (%dx%d drawn): leaving it", wid, *ext)
+                self.dark_edge.add(wid)
+                self.bad_renders = 0
+                return
+            delays = REOPEN_DELAYS if after_layout else REOPEN_DELAYS_QUICK
+            if self.bad_renders >= len(delays):
                 log.warning("Wallpaper Engine still draws only %dx%d of %dx%d: giving up", *ext, w, h)
                 self.bad_renders = 0
                 return
-            delay = REOPEN_DELAYS[self.bad_renders]
+            delay = delays[self.bad_renders]
             self.bad_renders += 1
             log.info("Wallpaper Engine draws only %dx%d of %dx%d (old screen layout?): "
                      "re-opening in %ds", *ext, w, h, delay)
@@ -445,8 +463,7 @@ class Daemon(dbus.service.Object):
             self.sink_idx = None
             self.grace_until = time.time() + GRACE_S
             self.verify_at = time.time() + VERIFY_DELAY
-            if time.time() - self.layout_changed >= VERIFY_WINDOW:
-                self.bad_renders = 0
+            self.verify_open = True
             log.info("wallpaper %s opened at %dx%d (%s)", self.cfg["wallpaper"], w, h, new_title)
             self.tick()
             self.pause_tick(force=True)
@@ -702,6 +719,7 @@ class Daemon(dbus.service.Object):
             return True        # déjà affiché
         self.cfg["wallpaper"] = str(wid)
         S.save(self.cfg)
+        self.bad_renders, self.reopen_at = 0, 0.0      # (essais de réouverture : propres à chaque fond)
         if self.video_mode():
             self.video_epoch, self.video_paused_pos = time.time(), None
             self.opened_wallpaper = str(wid)

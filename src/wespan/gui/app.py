@@ -443,6 +443,15 @@ class Backend(QObject):
                 f["ids"].append(wid)
         self._put("folders", folders)
 
+    @Slot(str, bool)
+    def setFolderHidden(self, name, hidden):
+        """Dossier exclu de la vue « Tous » (ses fonds ne s'affichent plus que dans le dossier)."""
+        folders = self.folders
+        for f in folders:
+            if f["name"] == name:
+                f["hidden"] = bool(hidden)
+        self._put("folders", folders)
+
     @Slot(str, int)
     def moveFolder(self, name, delta):
         folders = self.folders

@@ -43,13 +43,19 @@ Kirigami.ScrollablePage {
             if ((folderList[i].ids || []).indexOf(id) !== -1) return folderList[i].name;
         return "";
     }
+    // dossiers exclus de « Tous »
+    readonly property var hiddenIds: {
+        let ids = [];
+        folderList.forEach(f => { if (f.hidden) ids = ids.concat(f.ids || []); });
+        return ids;
+    }
     function inFolder(w) {
-        if (folder === "") return true;
+        if (folder === "") return hiddenIds.indexOf(w.id) === -1;
         if (folder === "__fav") return favs.indexOf(w.id) !== -1;
         return folderOf(w.id) === folder;
     }
     function countIn(name) {
-        if (name === "") return backend.wallpapers.length;
+        if (name === "") return backend.wallpapers.filter(w => hiddenIds.indexOf(w.id) === -1).length;
         if (name === "__fav") return backend.wallpapers.filter(w => favs.indexOf(w.id) !== -1).length;
         for (let i = 0; i < folderList.length; i++)
             if (folderList[i].name === name)
@@ -207,7 +213,10 @@ Kirigami.ScrollablePage {
                     model: page.folderList
                     delegate: FolderChip {
                         required property var modelData
-                        name: modelData.name; label: modelData.name; iconName: "folder"; editable: true
+                        name: modelData.name; label: modelData.name; editable: true
+                        iconName: modelData.hidden ? "view-hidden" : "folder"
+                        QQC2.ToolTip.text: modelData.hidden ? page.t("Masqué dans « Tous »", "Hidden from “All”") : ""
+                        QQC2.ToolTip.visible: hovered && !!modelData.hidden
                     }
                 }
                 QQC2.ToolButton {
@@ -279,6 +288,13 @@ Kirigami.ScrollablePage {
         QQC2.MenuItem {
             icon.name: "edit-rename"; text: page.t("Renommer…", "Rename…")
             onTriggered: { nameDialog.mode = "rename"; nameDialog.old = folderMenu.target; nameDialog.open(); }
+        }
+        QQC2.MenuItem {
+            readonly property var f: page.folderList.find(x => x.name === folderMenu.target) || ({})
+            icon.name: "view-hidden"
+            text: page.t("Masquer dans « Tous »", "Hide from “All”")
+            checkable: true; checked: !!f.hidden
+            onTriggered: backend.setFolderHidden(folderMenu.target, checked)
         }
         QQC2.MenuItem { icon.name: "go-previous"; text: page.t("Déplacer à gauche", "Move left"); onTriggered: backend.moveFolder(folderMenu.target, -1) }
         QQC2.MenuItem { icon.name: "go-next"; text: page.t("Déplacer à droite", "Move right"); onTriggered: backend.moveFolder(folderMenu.target, 1) }
