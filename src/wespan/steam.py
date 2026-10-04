@@ -269,13 +269,48 @@ def we_fps(info: SteamInfo) -> int | None:
 
 
 def set_we_fps(info: SteamInfo, fps: int) -> bool:
-    """À faire WE arrêté (il réécrit son fichier en quittant)."""
+    """Limite d'images/s. À faire WE arrêté (il réécrit son fichier en quittant).
+
+    Le limiteur de WE est imprécis sous Proton (58,8 à 61,5 i/s pour 60) : la capture de KWin, elle,
+    est régulière, d'où des images doublées ou sautées (saccades sur les mouvements lents). C'est donc
+    DXVK qui cadence (dxvk.conf, lu dans le dossier de WE, précis) ; WE est réglé au double pour ne
+    pas s'en mêler."""
+    fps = max(10, min(240, int(fps)))
+    _set_dxvk_rate(info, fps)
     f = info.we_dir / "config.json"
     text = f.read_text(errors="replace")
-    new, n = re.subn(r'("fps"\s*:\s*)\d+', lambda m: m.group(1) + str(int(fps)), text)
-    if n:
+    new, n = re.subn(r'("fps"\s*:\s*)\d+', lambda m: m.group(1) + str(min(480, fps * 2)), text)
+    if n and new != text:
         f.write_text(new)
     return bool(n)
+
+
+DXVK_KEYS = ("dxgi.maxFrameRate", "d3d9.maxFrameRate")
+
+
+def _set_dxvk_rate(info: SteamInfo, fps: int) -> None:
+    f = info.we_dir / "dxvk.conf"
+    try:
+        lines = f.read_text(errors="replace").splitlines() if f.exists() else []
+    except OSError:
+        lines = []
+    lines = [l for l in lines if l.split("=")[0].strip() not in DXVK_KEYS]
+    lines += [f"{k} = {fps}" for k in DXVK_KEYS]
+    try:
+        f.write_text("\n".join(lines) + "\n")
+    except OSError:
+        pass
+
+
+def we_fps_ok(info: SteamInfo, fps: int) -> bool:
+    """dxvk.conf et config.json déjà réglés pour cette limite ?"""
+    try:
+        conf = (info.we_dir / "dxvk.conf").read_text(errors="replace")
+        cfg = (info.we_dir / "config.json").read_text(errors="replace")
+    except OSError:
+        return False
+    m = re.search(r'"fps"\s*:\s*(\d+)', cfg)
+    return f"dxgi.maxFrameRate = {fps}" in conf and bool(m) and int(m[1]) == min(480, fps * 2)
 
 
 # --- Workshop -------------------------------------------------------------------------------

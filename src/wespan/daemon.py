@@ -271,10 +271,14 @@ class Daemon(dbus.service.Object):
                     self.direct_tried = True
                     log.warning("Steam did not start Wallpaper Engine within %d s: starting it through Proton",
                                 STEAM_WAIT)
+                    if not steam.we_fps_ok(self.info, int(self.cfg["fps"])):
+                        steam.set_we_fps(self.info, int(self.cfg["fps"]))
                     engine.launch_direct(self.info)
                 elif now - self.last_launch > LAUNCH_COOLDOWN and (self.last_launch == 0 or self.cfg["restart_engine"]):
                     self.last_launch = self.steam_launch_at = now
                     self.direct_tried = False
+                    if not steam.we_fps_ok(self.info, int(self.cfg["fps"])):   # (WE arrêté : on peut écrire)
+                        steam.set_we_fps(self.info, int(self.cfg["fps"]))
                     engine.launch_via_steam()
         elif self.video_mode():
             self.steam_launch_at = 0.0
