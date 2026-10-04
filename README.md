@@ -152,6 +152,9 @@ Open the app → **Diagnostics**: every check has a *Fix* button, and the log ca
   — check *Diagnostics*. The first start through Steam takes ~30 s.
 - **Clock in a wallpaper showing an old time**: a scene frozen for a long time (screen locked, all windows
   maximized) is reopened when it resumes, so its clock is right again.
+- **Scenes not perfectly smooth** (slow clouds, foliage, water judder a little): Wallpaper Engine's own frame
+  limiter is imprecise under Proton, so WE Span lets DXVK pace the frames (`dxvk.conf` in Wallpaper Engine's
+  folder, written before each launch; your other lines in it are kept).
 - **Short video wallpapers stuttering at each loop**: short clips are played from a ~60 s version made once
   (stream-copied, no quality loss, needs `ffmpeg`; cached in `~/.cache/wespan/loops`).
 - **Picture drawn in a corner, rest black, after a monitor wakes up**: Wine can take a minute or two to learn
