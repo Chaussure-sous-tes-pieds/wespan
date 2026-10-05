@@ -272,6 +272,14 @@ WallpaperItem {
 
     // --- flux : (re)demande robuste ---------------------------------------------------------
     property int failures: 0
+    // Flux perdu (PipeWire/WirePlumber l'a coupé : « target not found ») : on en demande un neuf avec
+    // l'AUTRE requête (un objet tout frais ; redemander avec la même restait parfois bloqué, avec du noir
+    // et un à-coup à chaque essai). L'ancien reste affiché jusqu'à ce que le nouveau ait une image.
+    function recoverStream(u) {
+        console.warn("WE Span: flux perdu sur", Screen.name, "- nouvelle demande (essai", failures, ")");
+        otherRequest.uuid = "";
+        Qt.callLater(() => { otherRequest.uuid = u; swapTimeout.restart(); });
+    }
     function restartStream() {
         activeRequest.uuid = "";
         rearm.restart();
@@ -319,7 +327,7 @@ WallpaperItem {
             // flux absent alors que la fenêtre existe : on redemande (écran débranché, KWin…)
             if (s.mode !== "video" && s.uuid && root.activeRequest.uuid === s.uuid && !root.activeStream.showing) {
                 root.failures++;
-                if (root.failures % 4 === 0) root.restartStream();
+                if (root.failures === 3 || root.failures % 15 === 0) root.recoverStream(s.uuid);
             } else {
                 root.failures = 0;
             }

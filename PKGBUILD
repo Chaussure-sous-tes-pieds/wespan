@@ -1,6 +1,6 @@
 # Maintainer: Chaussure-sous-tes-pieds <299629219+Chaussure-sous-tes-pieds@users.noreply.github.com>
 pkgname=wespan-git
-pkgver=1.2.1
+pkgver=1.2.2
 pkgrel=1
 pkgdesc="Wallpaper Engine (Steam/Proton) as a real KDE Plasma wallpaper on Wayland, spanned across screens"
 arch=('any')
@@ -19,7 +19,7 @@ sha256sums=('SKIP')
 
 pkgver() {
     cd wespan
-    printf "1.2.1.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+    printf "1.2.2.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 package() {
