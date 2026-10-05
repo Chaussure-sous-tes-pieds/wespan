@@ -15,6 +15,7 @@ import QtQuick.Window
 import org.kde.plasma.plasmoid
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as P5Support
+import org.kde.plasma.workspace.dbus as DBus
 import org.kde.pipewire as PipeWire
 import org.kde.taskmanager as TaskManager
 import QtMultimedia
@@ -310,28 +311,47 @@ WallpaperItem {
     }
     function wespanCmd(args, cb) { exec.run(root.wespan + " " + args, cb); }
 
+    // L'état vient du service par DBus. Surtout pas une commande par seconde via le moteur
+    // « executable » : chaque nom de source unique y reste et l'alourdit, et plasmashell (barre des
+    // tâches comprise) finit par saturer au bout de quelques heures.
     property bool polling: false
+    property int dbusFailures: 0
     function poll() {
         if (polling) return;
         polling = true;
-        exec.run('cat "$XDG_RUNTIME_DIR/wespan/state.json" 2>/dev/null || '
-                 + 'cat "${XDG_CACHE_HOME:-$HOME/.cache}/wespan/last-state.json" 2>/dev/null', out => {
-            polling = false;
-            let s;
-            try { s = JSON.parse(out); } catch (e) { s = null; }
-            if (!s) { root.st = ({ lang: root.st.lang }); root.wantUuid(""); return; }
-            const wasPaused = root.st.video && root.st.video.pausedPos !== null;
-            root.st = s;
-            root.wantUuid(s.mode === "video" ? "" : (s.uuid || ""));
-            if (s.mode === "video" && s.video && (s.video.pausedPos !== null) !== wasPaused) root.syncVideo(false);
-            // flux absent alors que la fenêtre existe : on redemande (écran débranché, KWin…)
-            if (s.mode !== "video" && s.uuid && root.activeRequest.uuid === s.uuid && !root.activeStream.showing) {
-                root.failures++;
-                if (root.failures === 3 || root.failures % 15 === 0) root.recoverStream(s.uuid);
-            } else {
-                root.failures = 0;
-            }
-        });
+        DBus.SessionBus.asyncCall({ service: "org.wespan.Daemon", path: "/Daemon", iface: "org.wespan.Daemon",
+                                    member: "GetState", arguments: [] },
+            reply => {
+                polling = false;
+                dbusFailures = 0;
+                applyState(parseState(reply && reply.value !== undefined ? reply.value : reply));
+            },
+            () => {
+                // service pas encore là (ouverture de session) : sa copie en cache, une fois toutes les 10 s
+                if (dbusFailures++ % 10 !== 0) { polling = false; return; }
+                exec.run('cat "$XDG_RUNTIME_DIR/wespan/state.json" 2>/dev/null || '
+                         + 'cat "${XDG_CACHE_HOME:-$HOME/.cache}/wespan/last-state.json" 2>/dev/null', out => {
+                    polling = false;
+                    applyState(parseState(out));
+                });
+            });
+    }
+    function parseState(text) {
+        try { return JSON.parse(text); } catch (e) { return null; }
+    }
+    function applyState(s) {
+        if (!s) { root.st = ({ lang: root.st.lang }); root.wantUuid(""); return; }
+        const wasPaused = root.st.video && root.st.video.pausedPos !== null;
+        root.st = s;
+        root.wantUuid(s.mode === "video" ? "" : (s.uuid || ""));
+        if (s.mode === "video" && s.video && (s.video.pausedPos !== null) !== wasPaused) root.syncVideo(false);
+        // flux absent alors que la fenêtre existe : on redemande (écran débranché, KWin…)
+        if (s.mode !== "video" && s.uuid && root.activeRequest.uuid === s.uuid && !root.activeStream.showing) {
+            root.failures++;
+            if (root.failures === 3 || root.failures % 15 === 0) root.recoverStream(s.uuid);
+        } else {
+            root.failures = 0;
+        }
     }
     Timer {
         interval: 1000
