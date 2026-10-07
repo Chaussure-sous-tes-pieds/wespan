@@ -602,12 +602,14 @@ class Tray(QObject):
         self.a_show = QAction(QIcon.fromTheme("configure"), "", self.menu)
         self.a_pause = QAction("", self.menu)
         self.a_mute = QAction("", self.menu)
+        self.a_reload = QAction(QIcon.fromTheme("view-refresh"), "", self.menu)
         self.a_quit = QAction(QIcon.fromTheme("application-exit"), "", self.menu)
         self.a_show.triggered.connect(self.show_window)
         self.a_pause.triggered.connect(lambda: backend.setPaused(not backend.state.get("paused")))
         self.a_mute.triggered.connect(lambda: backend.setMuted(not backend.state.get("muted")))
+        self.a_reload.triggered.connect(backend.restartEngine)
         self.a_quit.triggered.connect(app.quit)
-        for a in (self.a_show, None, self.a_pause, self.a_mute, None, self.a_quit):
+        for a in (self.a_show, None, self.a_pause, self.a_mute, self.a_reload, None, self.a_quit):
             self.menu.addSeparator() if a is None else self.menu.addAction(a)
         self.icon.setContextMenu(self.menu)
         self.icon.activated.connect(self.on_activated)
@@ -635,6 +637,8 @@ class Tray(QObject):
         muted = st.get("muted")
         self.a_mute.setText(t("Remettre le son", "Unmute") if muted else t("Couper le son", "Mute"))
         self.a_mute.setIcon(QIcon.fromTheme("audio-volume-high" if muted else "audio-volume-muted"))
+        self.a_reload.setText(t("Recharger le fond (redémarre Wallpaper Engine)",
+                                "Reload wallpaper (restarts Wallpaper Engine)"))
         self.a_quit.setText(t("Quitter l'icône (le fond continue)", "Quit tray icon (wallpaper keeps running)"))
         status = (t("En pause", "Paused") if st.get("paused") else t("En lecture", "Playing")) if st else \
             t("Service arrêté", "Service stopped")

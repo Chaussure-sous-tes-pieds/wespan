@@ -33,6 +33,10 @@ REOPEN_DELAYS_QUICK = (2, 8, 30)             # (pareil, hors changement d'écran
 VIDEO_QUIT_DELAY = 60       # s de fond vidéo avant de fermer WE (inutile pour une vidéo)
 LONG_PAUSE = 120            # s : au-delà, on rouvre la scène à la reprise (horloges des fonds en retard)
 SNAPSHOT_EVERY = 600        # s entre deux captures de la dernière image (affichée à l'ouverture de session)
+HEALTH_EVERY = 60           # s entre deux contrôles « l'image de la scène bouge-t-elle encore ? »
+FROZEN_RETRY = 900          # s : figée de nouveau si tôt après une réouverture => on redémarre WE
+STALE_ENGINE = 4 * 3600     # s : WE lancé depuis plus longtemps est redémarré à la reprise d'une longue pause
+RESTART_COOLDOWN = 300      # s entre deux redémarrages automatiques de WE
 
 
 class Worker(threading.Thread):
@@ -101,6 +105,18 @@ class Daemon(dbus.service.Object):
         self.verify_open = False
         self.last_bad = None                 # (fond, zone dessinée) de la dernière mesure trop petite
         self.dark_edge = set()               # fonds réellement noirs sur un bord (on ne rouvre plus)
+        # Santé de WE. Au bout de quelques heures (longues pauses, écrans éteints…), une instance peut
+        # se dégrader : horloge des scènes fausse (« 10 JUN 1859 »), commandes ignorées (fenêtres qu'il
+        # ne ferme ni n'ouvre plus), image figée. Seul un redémarrage de WE répare.
+        self.health_at = 0.0
+        self.moving = {}                     # fond -> contrôles de suite où son image bougeait
+        self.drawn = set()                   # fonds dont on a vu une image complète
+        self.frozen_hits = 0
+        self.frozen_fixes = []               # réouvertures pour image figée (heures)
+        self.stuck_hits = 0                  # fermetures de fenêtre sans effet, de suite
+        self.open_failures = 0
+        self.last_restart = 0.0
+        self.pause_changed = 0.0
         self.loops = {}                      # vidéo -> version allongée (None : en cours / inutile)
         # dernière image gardée, et horloge vidéo de la session précédente (le fond Plasma a pu
         # commencer à jouer la vidéo avant le démarrage du service : on garde la même horloge)
@@ -300,7 +316,8 @@ class Daemon(dbus.service.Object):
                 wins = engine.canvas_windows()
                 if wins and not self.worker.busy and now - self.last_open > 5:
                     info = self.info       # on libère ses fenêtres
-                    self.worker.submit("close-scenes", lambda: [engine.close_wallpaper(info, t) for t in wins])
+                    self.worker.submit("close-scenes", lambda: all([engine.close_wallpaper(info, t) for t in wins]),
+                                       self.closed)
             self.xid = None
         else:
             self.steam_launch_at = 0.0
@@ -320,7 +337,8 @@ class Daemon(dbus.service.Object):
             if stray and self.xid and not self.worker.busy and not self.open_pending \
                     and now - self.last_open > 10:
                 info = self.info
-                self.worker.submit("cleanup", lambda: [engine.close_wallpaper(info, t) for t in stray])
+                self.worker.submit("cleanup", lambda: all([engine.close_wallpaper(info, t) for t in stray]),
+                                   self.closed)
             w, h = self.canvas_size()
             if self.xid is None:
                 if now - self.we_seen_since > WE_WARMUP and now - self.last_open > OPEN_COOLDOWN \
@@ -355,6 +373,9 @@ class Daemon(dbus.service.Object):
             self.reopen_at = 0.0
             self.open_current(recreate=True)
             return
+        if not self.verify_at and now - self.health_at > HEALTH_EVERY:
+            self.health_tick(now)
+            return
         if not self.verify_at and self.xid and now - self.last_snapshot > SNAPSHOT_EVERY:
             self.verify_at = now
             self.verify_open = False             # capture périodique : on ne rouvre jamais pour ça
@@ -373,6 +394,7 @@ class Daemon(dbus.service.Object):
             if not ext:
                 return
             if ext[0] >= w - 24 and ext[1] >= h - 24:
+                self.drawn.add(wid)
                 if self.bad_renders:
                     log.info("render OK at %dx%d after %d re-open(s)", w, h, self.bad_renders)
                 self.bad_renders = 0
@@ -440,7 +462,8 @@ class Daemon(dbus.service.Object):
             if need_new:
                 desktop.ensure_rule(w, h)
             if engine.window_xid(new_title):          # reste d'un essai précédent
-                engine.close_wallpaper(info, new_title)
+                if not engine.close_wallpaper(info, new_title):
+                    return "stuck"     # (sinon on prendrait cette vieille fenêtre pour la nouvelle)
                 time.sleep(0.5)
             # nouveau fond dans une NOUVELLE fenêtre : l'ancienne reste affichée pendant le chargement,
             # et une fenêtre neuve n'a pas de restes de l'ancien fond
@@ -458,10 +481,18 @@ class Daemon(dbus.service.Object):
 
         def done(ok):
             self.last_open = time.time()
+            if ok == "stuck":
+                self.engine_stuck(f"it no longer closes its window {new_title}")
+                return
             if not ok:
                 log.warning("failed to open wallpaper %s", self.cfg["wallpaper"])
+                self.open_failures += 1
+                if self.open_failures >= 2:
+                    self.engine_stuck("it no longer opens wallpapers")
                 self.tick()
                 return
+            self.open_failures = 0
+            self.health_at = time.time()          # premier contrôle dans HEALTH_EVERY s
             self.title = new_title
             self.window_size = (w, h)
             self.sink_idx = None
@@ -474,11 +505,76 @@ class Daemon(dbus.service.Object):
             if old_title and old_title != new_title:
                 # laisse le plugin basculer sur le nouveau flux avant de fermer l'ancien
                 GLib.timeout_add_seconds(3, lambda: (self.worker.submit(
-                    "close-old", lambda: engine.close_wallpaper(info, old_title)), False)[1])
+                    "close-old", lambda: engine.close_wallpaper(info, old_title), self.closed), False)[1])
 
         self.worker.submit("open", job, done)
 
     # --- pause ----------------------------------------------------------------------------
+
+    def health_tick(self, now):
+        """L'image de la scène bouge-t-elle encore ? Une scène qu'on a vue animée et qui ne bouge plus
+        (ou qu'on a vue dessinée et qui devient noire) alors que WE n'est pas en pause : WE ne rend plus
+        cette fenêtre. On la rouvre ; si elle refige peu après, on redémarre WE."""
+        self.health_at = now
+        if not self.xid or self.paused or self.locked or self.video_mode() or now - self.last_open < 20:
+            self.frozen_hits = 0
+            return
+        xid, wid, t0 = self.xid, self.opened_wallpaper or self.cfg["wallpaper"], now
+
+        def done(res):
+            if not res or self.xid != xid or self.paused or self.pause_changed > t0 or self.last_open > t0:
+                return
+            w, h, moved = res
+            black = w <= 24 and h <= 24
+            if moved and not black:
+                self.moving[wid] = self.moving.get(wid, 0) + 1
+                self.frozen_hits = 0
+                return
+            # seulement une scène vue animée à chaque contrôle (pas une horloge seule, ni une scène
+            # qui ne bouge que de temps en temps), ou vue dessinée puis devenue noire
+            if not ((self.moving.get(wid, 0) >= 3 and not moved) or (black and wid in self.drawn)):
+                self.moving[wid] = 0
+                return
+            self.frozen_hits += 1
+            if self.frozen_hits < 3:              # figée pendant au moins une minute
+                self.health_at = time.time() - HEALTH_EVERY / 2
+                return
+            self.moving[wid] = 0
+            self.frozen_hits = 0
+            what = "black" if black else "frozen"
+            t = time.time()
+            self.frozen_fixes = [x for x in self.frozen_fixes if t - x < FROZEN_RETRY]
+            if self.frozen_fixes:
+                self.engine_stuck(f"wallpaper {wid} {what} again after re-opening it")
+                return
+            self.frozen_fixes.append(t)
+            log.warning("wallpaper %s is %s although not paused: re-opening it", wid, what)
+            self.open_current(recreate=True)
+
+        self.worker.submit("health", lambda: engine.drawn_extent(xid, motion=True), done)
+
+    def closed(self, ok):
+        """Résultat d'une fermeture de fenêtre : deux fois sans effet de suite => WE n'obéit plus."""
+        if ok:
+            self.stuck_hits = 0
+            return
+        self.stuck_hits += 1
+        log.warning("Wallpaper Engine ignored a close command (%d)", self.stuck_hits)
+        if self.stuck_hits >= 2:
+            self.engine_stuck("it no longer closes its windows")
+
+    def engine_stuck(self, why, force=False):
+        """Redémarre WE (instance dégradée). La dernière image reste affichée pendant ce temps."""
+        now = time.time()
+        if not force and now - self.last_restart < RESTART_COOLDOWN:
+            log.warning("Wallpaper Engine misbehaves (%s), but it was restarted %d s ago: waiting",
+                        why, now - self.last_restart)
+            return False
+        log.warning("Wallpaper Engine misbehaves (%s): restarting it", why)
+        self.last_restart = now
+        self.stuck_hits = self.open_failures = self.frozen_hits = 0
+        self.RestartEngine()
+        return True
 
     def screen_covered(self, s):
         c = self.cfg
@@ -542,6 +638,7 @@ class Daemon(dbus.service.Object):
             stopped = engine.is_stopped(pid)
             if stopped != self.paused:
                 self.paused_since = now if stopped else 0.0
+                self.pause_changed = now
             self.paused = stopped
         if want != self.paused or force:
             if want and not force and reason not in ("manual", "locked"):
@@ -554,15 +651,22 @@ class Daemon(dbus.service.Object):
                 return True
             if not self.worker.busy and engine.we_pid() and engine.freeze(want):
                 if want != self.paused:
+                    self.pause_changed = now
                     log.info("%s (%s)", "paused" if want else "playing", reason or "-")
                     if want:
                         self.paused_since = now
                     elif self.paused_since and now - self.paused_since > LONG_PAUSE and self.xid:
                         # WE gelé longtemps : les minuteries des scènes (horloges, dates…) ne rattrapent
                         # pas le temps perdu. Une ouverture neuve repart à l'heure (double tampon : invisible).
-                        log.info("resumed after %d min: re-opening the scene so its clock is right",
-                                 (now - self.paused_since) / 60)
-                        self.reopen_at = now + 1
+                        up = engine.uptime(pid) if pid else 0
+                        # une instance qui a des heures peut avoir une horloge fausse même dans une
+                        # scène neuve (vu : « 10 JUN 1859 ») : on repart d'un WE neuf
+                        if not (up > STALE_ENGINE and self.engine_stuck(
+                                f"resumed after {(now - self.paused_since) / 60:.0f} min, "
+                                f"running for {up / 3600:.1f} h; scene clocks may be wrong")):
+                            log.info("resumed after %d min: re-opening the scene so its clock is right",
+                                     (now - self.paused_since) / 60)
+                            self.reopen_at = now + 1
                     if not want:
                         self.paused_since = 0.0
                 self.paused = want

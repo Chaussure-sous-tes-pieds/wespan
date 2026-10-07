@@ -35,6 +35,16 @@ def we_pid() -> int | None:
     return None
 
 
+def uptime(pid: int) -> float:
+    """Secondes depuis le lancement du processus (0 si inconnu)."""
+    try:
+        start = int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19])
+        boot_s = float(Path("/proc/uptime").read_text().split()[0])
+        return max(0.0, boot_s - start / os.sysconf("SC_CLK_TCK"))
+    except (OSError, IndexError, ValueError):
+        return 0.0
+
+
 def is_stopped(pid: int) -> bool:
     try:
         return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] in ("T", "t")
@@ -141,26 +151,30 @@ def close_wallpaper(info: SteamInfo, title: str) -> bool:
     quitter."""
     import time
     # « -playInWindow X » fermerait TOUTES les fenêtres ; « -location X » ne ferme que X
-    ok = control(info, "closeWallpaper", "-location", title)
+    control(info, "closeWallpaper", "-location", title)
     for _ in range(40):
         if title not in canvas_windows():
-            break
+            time.sleep(0.5)
+            return True
         time.sleep(0.25)
-    time.sleep(0.5)
-    return ok
+    return False       # toujours là : WE n'obéit plus (voir Daemon.engine_stuck)
 
 
-def drawn_extent(xid: str, save: Path | None = None) -> tuple | None:
+def drawn_extent(xid: str, save: Path | None = None, motion: bool = False) -> tuple | None:
     """(largeur, hauteur) de la zone que WE dessine vraiment dans sa fenêtre (voir probe.py) ; avec
-    save, l'image de la fenêtre y est aussi enregistrée (JPEG)."""
+    save, l'image de la fenêtre y est aussi enregistrée (JPEG). Avec motion : (largeur, hauteur,
+    l'image a bougé en 1,5 s)."""
     import sys
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [
         str(Path(__file__).resolve().parent.parent), os.environ.get("PYTHONPATH")])))
     try:
-        r = subprocess.run([sys.executable, "-m", "wespan.probe", xid, *([str(save)] if save else [])],
+        r = subprocess.run([sys.executable, "-m", "wespan.probe", xid, *([str(save)] if save else []),
+                            *(["--motion"] if motion else [])],
                            env=env, capture_output=True, text=True, timeout=30)
-        w, h = map(int, r.stdout.split())
-        return w, h
+        vals = tuple(map(int, r.stdout.split()))
+        if len(vals) != (3 if motion else 2):
+            return None
+        return vals[:2] + (bool(vals[2]),) if motion else vals
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
 

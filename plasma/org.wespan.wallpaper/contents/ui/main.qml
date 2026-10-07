@@ -166,14 +166,17 @@ WallpaperItem {
         const since = Date.now() - Math.max(lastFrame, loadStart);
         if (since > 4000) {
             console.warn("WE Span: lecteur vidéo bloqué sur", Screen.name, "- rechargement");
-            loadStart = Date.now();
-            lastFrame = 0;
-            player.stop();
-            player.source = "";
-            player.source = Qt.binding(() => root.videoSource);
-            player.play();
-            syncTimer.restart();
+            reloadVideo();
         }
+    }
+    function reloadVideo() {
+        loadStart = Date.now();
+        lastFrame = 0;
+        player.stop();
+        player.source = "";
+        player.source = Qt.binding(() => root.videoSource);
+        player.play();
+        syncTimer.restart();
     }
     MediaPlayer {
         id: player
@@ -373,6 +376,15 @@ WallpaperItem {
                                       : root.t("Mettre le fond en pause", "Pause wallpaper")
             icon.name: root.st.paused ? "media-playback-start" : "media-playback-pause"
             onTriggered: root.wespanCmd("togglepause", () => root.poll())
+        },
+        PlasmaCore.Action {
+            // image figée, noire, horloge fausse… : vidéo relue, ou Wallpaper Engine redémarré
+            text: root.t("Recharger le fond d'écran", "Reload wallpaper")
+            icon.name: "view-refresh"
+            onTriggered: {
+                if (root.videoMode) { root.reloadVideo(); return; }
+                root.wespanCmd("restart", () => root.poll());
+            }
         },
         PlasmaCore.Action {
             text: root.t("Réglages de WE Span…", "WE Span settings…")

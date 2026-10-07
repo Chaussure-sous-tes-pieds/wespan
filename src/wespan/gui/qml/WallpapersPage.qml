@@ -154,7 +154,7 @@ Kirigami.ScrollablePage {
             onTriggered: applicationWindow().showPage("Search")
         },
         Kirigami.Action {
-            text: t("Actualiser", "Refresh"); icon.name: "view-refresh"
+            text: t("Actualiser la liste", "Refresh list"); icon.name: "view-refresh"
             onTriggered: backend.refreshWallpapers()
         }
     ]

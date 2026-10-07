@@ -87,7 +87,7 @@ is edited, so it is closed and restarted automatically).
 - **Settings app**: `wespan settings` or the *WE Span* launcher.
 - **System tray icon** (optional, on by default): click to show/hide the window, menu to pause/mute. With it,
   closing the window just tucks it away; the wallpaper keeps running in any case (it's driven by the service).
-- **Right-click the desktop**: mute/unmute, pause/resume, open settings.
+- **Right-click the desktop**: mute/unmute, pause/resume, reload wallpaper (frozen/black picture, wrong date: restarts Wallpaper Engine), open settings.
 - **Command line**: `wespan status | set <id> | mute | unmute | volume 40 | pause | resume | offset HDMI-A-1 0 40 | restart | doctor`
 
 ### Your library
@@ -152,6 +152,12 @@ Open the app → **Diagnostics**: every check has a *Fix* button, and the log ca
   — check *Diagnostics*. The first start through Steam takes ~30 s.
 - **Clock in a wallpaper showing an old time**: a scene frozen for a long time (screen locked, all windows
   maximized) is reopened when it resumes, so its clock is right again.
+- **Frozen or black picture, wrong date in a scene (e.g. “10 JUN 1859”)**: after hours of running (long
+  pauses, screens turned off), Wallpaper Engine can degrade under Proton: scene clocks go wrong, it ignores
+  commands (windows it no longer opens or closes) or stops drawing. WE Span checks every minute that an
+  animated scene still moves, and restarts Wallpaper Engine when it misbehaves (or when it resumes from a
+  long pause after running for 4 h+). By hand: right-click the desktop → *Reload wallpaper* (or the tray
+  menu, or `wespan restart`); the last picture stays on screen meanwhile (~30 s).
 - **Scenes not perfectly smooth** (slow clouds, foliage, water judder a little): Wallpaper Engine's own frame
   limiter is imprecise under Proton, so WE Span lets DXVK pace the frames (`dxvk.conf` in Wallpaper Engine's
   folder, written before each launch; your other lines in it are kept).
@@ -237,7 +243,11 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
 - Application : `wespan settings` ou le lanceur *WE Span*.
 - Icône dans la zone de notification (optionnelle, activée par défaut) : clic pour afficher/masquer la
   fenêtre, menu pause/son. Le fond continue de tourner même application fermée.
-- Clic droit sur le bureau : couper/remettre le son, pause/reprise, réglages.
+- Clic droit sur le bureau : couper/remettre le son, pause/reprise, **recharger le fond d'écran** (image
+  figée ou noire, date fausse dans une scène : redémarre Wallpaper Engine, la dernière image reste affichée
+  ~30 s), réglages. WE Span le fait aussi tout seul : il vérifie chaque minute qu'une scène animée bouge
+  encore, et redémarre Wallpaper Engine s'il n'obéit plus ou après une longue pause quand il tourne depuis
+  plus de 4 h (au bout de quelques heures sous Proton, son horloge peut se dérégler : « 10 JUN 1859 »).
 - **Bibliothèque** : dossiers (clic droit sur un fond → *Ranger dans*, ou glisser-déposer sur le dossier ;
   clic droit sur un dossier → *Masquer dans « Tous »* pour l'exclure),
   favoris (l'étoile), tri et filtres comme dans Wallpaper Engine (date d'ajout, mise à jour, popularité,
