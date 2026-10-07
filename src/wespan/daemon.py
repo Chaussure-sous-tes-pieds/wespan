@@ -36,6 +36,7 @@ SNAPSHOT_EVERY = 600        # s entre deux captures de la dernière image (affic
 HEALTH_EVERY = 60           # s entre deux contrôles « l'image de la scène bouge-t-elle encore ? »
 FROZEN_RETRY = 900          # s : figée de nouveau si tôt après une réouverture => on redémarre WE
 STALE_ENGINE = 4 * 3600     # s : WE lancé depuis plus longtemps est redémarré à la reprise d'une longue pause
+STALE_PAUSE = 3600          # s : pause au-delà de laquelle WE est redémarré à la reprise (vu dégradé après 336 min)
 RESTART_COOLDOWN = 300      # s entre deux redémarrages automatiques de WE
 
 
@@ -659,9 +660,10 @@ class Daemon(dbus.service.Object):
                         # WE gelé longtemps : les minuteries des scènes (horloges, dates…) ne rattrapent
                         # pas le temps perdu. Une ouverture neuve repart à l'heure (double tampon : invisible).
                         up = engine.uptime(pid) if pid else 0
-                        # une instance qui a des heures peut avoir une horloge fausse même dans une
-                        # scène neuve (vu : « 10 JUN 1859 ») : on repart d'un WE neuf
-                        if not (up > STALE_ENGINE and self.engine_stuck(
+                        # après des heures (ici 5 h 36 de session verrouillée), WE peut se dégrader :
+                        # horloge fausse même dans une scène neuve (« 10 JUN 1859 »), commandes ignorées,
+                        # image figée. On repart d'un WE neuf (la dernière image reste affichée).
+                        if not ((up > STALE_ENGINE or now - self.paused_since > STALE_PAUSE) and self.engine_stuck(
                                 f"resumed after {(now - self.paused_since) / 60:.0f} min, "
                                 f"running for {up / 3600:.1f} h; scene clocks may be wrong")):
                             log.info("resumed after %d min: re-opening the scene so its clock is right",

@@ -155,8 +155,8 @@ Open the app → **Diagnostics**: every check has a *Fix* button, and the log ca
 - **Frozen or black picture, wrong date in a scene (e.g. “10 JUN 1859”)**: after hours of running (long
   pauses, screens turned off), Wallpaper Engine can degrade under Proton: scene clocks go wrong, it ignores
   commands (windows it no longer opens or closes) or stops drawing. WE Span checks every minute that an
-  animated scene still moves, and restarts Wallpaper Engine when it misbehaves (or when it resumes from a
-  long pause after running for 4 h+). By hand: right-click the desktop → *Reload wallpaper* (or the tray
+  animated scene still moves, and restarts Wallpaper Engine when it misbehaves (and when it resumes from a
+  pause over an hour, or after running for 4 h+). By hand: right-click the desktop → *Reload wallpaper* (or the tray
   menu, or `wespan restart`); the last picture stays on screen meanwhile (~30 s).
 - **Scenes not perfectly smooth** (slow clouds, foliage, water judder a little): Wallpaper Engine's own frame
   limiter is imprecise under Proton, so WE Span lets DXVK pace the frames (`dxvk.conf` in Wallpaper Engine's
@@ -246,8 +246,8 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
 - Clic droit sur le bureau : couper/remettre le son, pause/reprise, **recharger le fond d'écran** (image
   figée ou noire, date fausse dans une scène : redémarre Wallpaper Engine, la dernière image reste affichée
   ~30 s), réglages. WE Span le fait aussi tout seul : il vérifie chaque minute qu'une scène animée bouge
-  encore, et redémarre Wallpaper Engine s'il n'obéit plus ou après une longue pause quand il tourne depuis
-  plus de 4 h (au bout de quelques heures sous Proton, son horloge peut se dérégler : « 10 JUN 1859 »).
+  encore, et redémarre Wallpaper Engine s'il n'obéit plus, ou à la reprise après plus d'une heure de pause
+  (ou s'il tourne depuis plus de 4 h) (au bout de quelques heures sous Proton, son horloge peut se dérégler : « 10 JUN 1859 »).
 - **Bibliothèque** : dossiers (clic droit sur un fond → *Ranger dans*, ou glisser-déposer sur le dossier ;
   clic droit sur un dossier → *Masquer dans « Tous »* pour l'exclure),
   favoris (l'étoile), tri et filtres comme dans Wallpaper Engine (date d'ajout, mise à jour, popularité,
