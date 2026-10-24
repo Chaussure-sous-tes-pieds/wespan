@@ -94,6 +94,7 @@ class Daemon(dbus.service.Object):
         self.we_seen_since = 0.0
         self.sink_idx = None
         self.layout_changed = 0.0
+        self.cover_until = 0.0               # jusque-là : le fond Plasma montre la dernière bonne image (rendu WE faux)
         self.verify_at = 0.0                 # mesure prévue de la zone dessinée par WE
         self.reopen_at = 0.0                 # réouverture prévue (WE dessinait trop petit)
         self.bad_renders = 0
@@ -400,6 +401,7 @@ class Daemon(dbus.service.Object):
                     log.info("render OK at %dx%d after %d re-open(s)", w, h, self.bad_renders)
                 self.bad_renders = 0
                 self.last_bad = None
+                self.cover_until = 0.0
                 if wid == self.cfg["wallpaper"] and tmp.is_file():
                     tmp.replace(S.FRAME_FILE)
                     self.frame = {"wallpaper": wid, "size": [w, h], "time": int(time.time())}
@@ -417,17 +419,20 @@ class Daemon(dbus.service.Object):
                 log.info("wallpaper %s is dark up to its edge (%dx%d drawn): leaving it", wid, *ext)
                 self.dark_edge.add(wid)
                 self.bad_renders = 0
+                self.cover_until = 0.0
                 return
             delays = REOPEN_DELAYS if after_layout else REOPEN_DELAYS_QUICK
             if self.bad_renders >= len(delays):
                 log.warning("Wallpaper Engine still draws only %dx%d of %dx%d: giving up", *ext, w, h)
                 self.bad_renders = 0
+                self.cover_until = 0.0
                 return
             delay = delays[self.bad_renders]
             self.bad_renders += 1
             log.info("Wallpaper Engine draws only %dx%d of %dx%d (old screen layout?): "
                      "re-opening in %ds", *ext, w, h, delay)
             self.reopen_at = time.time() + delay
+            self.cover_until = time.time() + delay + 60
 
         self.worker.submit("verify", lambda: engine.drawn_extent(xid, tmp), done)
 
@@ -444,6 +449,8 @@ class Daemon(dbus.service.Object):
             self.cfg["wallpaper"] = wps[0]["id"]
             pj = steam.wallpaper_path(self.info, self.cfg["wallpaper"])
         self.last_open = time.time()
+        if recreate and self.last_open - self.layout_changed < VERIFY_WINDOW:
+            self.cover_until = self.last_open + 90       # rendu pas encore vérifié : on masque un éventuel glitch
         w, h = self.canvas_size()
         need_new = recreate or self.window_size not in (None, (w, h)) or not desktop.rule_ok(w, h)
         info = self.info
@@ -704,6 +711,7 @@ class Daemon(dbus.service.Object):
             "muted": self.cfg["muted"], "volume": self.cfg["volume"],
             "paused": self.video_paused() if vfile else self.paused, "pauseReason": self.pause_reason, "manualPause": self.manual_pause,
             "running": bool(engine.we_pid()), "window_ok": bool(self.xid),
+            "coverFrame": time.time() < self.cover_until,
             "wallpaper": wp, "preview": preview,
             "screens": self.screens, "busy": self.worker.busy, "message": self.message,
             "lang": S.language(self.cfg),

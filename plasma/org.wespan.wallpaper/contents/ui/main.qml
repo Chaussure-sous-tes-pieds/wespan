@@ -93,7 +93,10 @@ WallpaperItem {
             source: root.st.frame ? "file://" + root.st.frame.path + "?" + root.st.frame.time : ""
             asynchronous: true
             cache: false
-            visible: viewport.waiting && status === Image.Ready
+            // z 3 : pendant un rendu WE faux (coin + ligne blanche + noir après un changement d'écrans),
+            // l'ancienne bonne image reste devant le flux jusqu'à ce que le service confirme le rendu
+            z: root.st.coverFrame ? 3 : 0
+            visible: (viewport.waiting || !!root.st.coverFrame) && status === Image.Ready
         }
         Image {
             x: root.originX; y: root.originY
