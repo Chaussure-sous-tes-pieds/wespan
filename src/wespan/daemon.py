@@ -107,6 +107,7 @@ class Daemon(dbus.service.Object):
         self.steam_launch_at = 0.0
         self.direct_tried = False
         self.steam_restart_at = 0.0
+        self.proton_warned = ""              # Proton abîmé déjà signalé (sans remplaçant)
         self.verify_open = False
         self.last_bad = None                 # (fond, zone dessinée) de la dernière mesure trop petite
         self.dark_edge = set()               # fonds réellement noirs sur un bord (on ne rouvre plus)
@@ -287,7 +288,9 @@ class Daemon(dbus.service.Object):
                     and not self.worker.busy and not self.locked:
                 # (session verrouillée : l'interface de Steam ne se dessine plus et reste bloquée avant le
                 # lancement ; on attend le déverrouillage)
-                if self.steam_launch_at and now - self.steam_launch_at > STEAM_WAIT and not self.direct_tried:
+                if self._repair_proton(now):
+                    pass
+                elif self.steam_launch_at and now - self.steam_launch_at > STEAM_WAIT and not self.direct_tried:
                     # Steam n'a rien lancé (fenêtre en attente d'une réponse…) : on passe par Proton
                     self.direct_tried = True
                     log.warning("Steam did not start Wallpaper Engine within %d s: starting it through Proton",
@@ -948,10 +951,41 @@ class Daemon(dbus.service.Object):
             time.sleep(2)
         self.worker.submit("restart", job, lambda _: self._relaunch())
 
-    def _restart_steam(self, now):
+    def _restart_steam(self, now, tool=""):
         self.steam_restart_at = self.last_launch = self.steam_launch_at = now
         self.direct_tried = False
-        self.worker.submit("restart-steam", steam.restart_steam)
+        info = self.info
+        self.worker.submit("restart-steam", lambda: steam.restart_steam(info=info, tool=tool),
+                           lambda _: setattr(self, "info", steam.SteamInfo(self.cfg.get("proton", ""))))
+
+    def _repair_proton(self, now):
+        """Proton de WE abîmé (fichiers réécrits par un autre Proton, voir steam.py) : WE ne démarre plus,
+        ni par Steam ni directement. On le fait passer sur un Proton intact, protégé en lecture seule.
+        Le Proton qui marche est protégé aussi, pour que ça n'arrive pas."""
+        p = self.info.proton
+        if not steam.user_installed(p):
+            return False
+        damaged = steam.proton_damaged(p)
+        if not damaged:
+            if not steam.proton_protected(p):
+                n = steam.protect_proton(p)
+                log.info("%s: %d Wine files made read-only (so another Proton can't overwrite them)",
+                         p.parent.name, n)
+            return False
+        alt = steam.healthy_tool(self.info, exclude=p)
+        if not alt or steam.other_game_running():
+            if self.proton_warned != str(p):
+                self.proton_warned = str(p)
+                log.warning("%s is damaged (%d Wine files overwritten by another Proton) and no intact Proton "
+                            "was found: reinstall it (e.g. with ProtonUp-Qt)", p.parent.name, damaged)
+            return False
+        name, alt_p = alt
+        if steam.user_installed(alt_p):
+            steam.protect_proton(alt_p)
+        log.warning("%s is damaged (%d Wine files overwritten by another Proton): switching Wallpaper Engine "
+                    "to %s and restarting Steam", p.parent.name, damaged, name)
+        self._restart_steam(now, tool=name)
+        return True
 
     def _relaunch(self):
         self.window_size = None

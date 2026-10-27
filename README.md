@@ -155,6 +155,14 @@ Open the app → **Diagnostics**: every check has a *Fix* button, and the log ca
   tries Proton directly, and if that fails too, restarts Steam by itself (at most every 10 min, never while
   another game is running). *Reload wallpaper* in the tray restarts Steam at once in that case. The output of
   the Proton launch is kept in `~/.cache/wespan/proton-direct.log`.
+- **Wallpaper Engine starts then quits after 2 s, at every boot** (Steam log: `unimplemented function
+  win32u.NtUserInitAnsiOem`): its Proton got damaged. When Steam starts, it runs every installed Proton on a
+  shared prefix (`compatdata/0`) whose DLLs are links into the previous Proton's folder, so each one overwrites
+  another Proton's files, and that Proton ends up with DLLs from another version. Only Protons whose files are
+  writable are hit. WE Span detects it, switches Wallpaper Engine to an intact Proton (newest GE-Proton, else
+  Proton Experimental; Steam is restarted) and makes that Proton's Wine files read-only so it can't happen
+  again. *Diagnostics → Proton files intact → Fix* does the same. Your games may use a damaged Proton too:
+  reinstall it (e.g. ProtonUp-Qt).
 - **Clock in a wallpaper showing an old time**: a scene frozen for a long time (screen locked, all windows
   maximized) is reopened when it resumes, so its clock is right again.
 - **Frozen or black picture, wrong date in a scene (e.g. “10 JUN 1859”)**: after hours of running (long

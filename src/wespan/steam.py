@@ -151,14 +151,37 @@ def find_proton(info: "SteamInfo") -> Path | None:
     if not info.root:
         return None
     # 2. l'outil de compatibilité choisi dans Steam pour WE
-    name = ""
+    name = compat_tool(info)
+    tools = compat_tools(info)
+    if name and name in tools and tools[name].exists():
+        return tools[name]
+    # 3. à défaut : un GE-Proton, sinon Proton Experimental
+    ge = sorted((p for k, p in tools.items() if "GE-Proton" in k and p.exists()), key=lambda p: _natural(p.parent.name))
+    if ge:
+        return ge[-1]
+    return tools.get("proton_experimental")
+
+
+def _natural(s: str) -> list:
+    """Clé de tri « GE-Proton11-5 » < « GE-Proton11-11 »."""
+    return [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", s)]
+
+
+def compat_tool(info: SteamInfo) -> str:
+    """Nom de l'outil de compatibilité choisi dans Steam pour WE ("" : celui par défaut)."""
     try:
         cfg = vdf_parse((info.root / "config/config.vdf").read_text(errors="replace"))
         m = vdf_get(cfg, "InstallConfigStore", "Software", "Valve", "Steam", "CompatToolMapping", WE_APPID)
-        name = vdf_get(m, "name") or ""
-    except OSError:
-        pass
+        return vdf_get(m, "name") or ""
+    except (OSError, TypeError):
+        return ""
+
+
+def compat_tools(info: SteamInfo) -> dict:
+    """{nom interne Steam : script proton} des Proton installés."""
     tools = {}
+    if not info.root:
+        return tools
     for d in [info.root / "compatibilitytools.d", Path("/usr/share/steam/compatibilitytools.d")]:
         for vdf in glob.glob(str(d / "*/compatibilitytool.vdf")):
             try:
@@ -173,13 +196,93 @@ def find_proton(info: "SteamInfo") -> Path | None:
             key = "proton_experimental" if "Experimental" in d else "proton_" + re.sub(r"\D", "", d.split(".")[0])
             tools.setdefault(key, Path(p))
             tools.setdefault(d, Path(p))
-    if name and name in tools and tools[name].exists():
-        return tools[name]
-    # 3. à défaut : un GE-Proton, sinon Proton Experimental
-    ge = sorted((p for k, p in tools.items() if "GE-Proton" in k and p.exists()), key=lambda p: p.parent.name)
+    return tools
+
+
+def set_compat_tool(info: SteamInfo, name: str) -> bool:
+    """Fait lancer WE par cet outil (Steam doit être fermé : il réécrit config.vdf en quittant)."""
+    f = info.root / "config/config.vdf"
+    try:
+        text = f.read_text(errors="replace")
+    except OSError:
+        return False
+    data = vdf_parse(text)
+    steam_cfg = vdf_child(vdf_child(vdf_child(vdf_child(data, "InstallConfigStore"), "Software"), "Valve"), "Steam")
+    app = vdf_child(vdf_child(steam_cfg, "CompatToolMapping"), WE_APPID)
+    app[:] = [["name", name], ["config", ""], ["priority", "250"]]
+    backup = f.with_suffix(".vdf.wespan-backup")
+    if not backup.exists():
+        backup.write_text(text)
+    f.write_text(vdf_dump(data))
+    return True
+
+
+# --- intégrité de Proton ------------------------------------------------------------------------
+# À l'ouverture de session, Steam lance chaque Proton installé sur son préfixe partagé compatdata/0,
+# qui « monte » ainsi de version en version. Les DLL de ce préfixe sont des liens vers les fichiers du
+# Proton précédent, et l'écriture de la version suivante passe à travers ces liens : elle remplace les
+# fichiers de l'autre Proton. Celui-ci se retrouve avec des DLL d'une autre version, et Wine abandonne
+# au lancement (« unimplemented function win32u.NtUserInitAnsiOem »).
+
+def user_installed(proton) -> bool:
+    """Proton installé à la main (GE, CachyOS…) : Steam ne le met pas à jour lui-même."""
+    return proton is not None and "compatibilitytools.d" in str(proton)
+
+
+def _wine_files(proton):
+    lib = Path(proton).parent / "files/lib/wine"
+    for d in ("x86_64-windows", "i386-windows", "x86_64-unix", "i386-unix"):
+        try:
+            yield from (f for f in (lib / d).iterdir() if f.is_file() and not f.is_symlink())
+        except OSError:
+            pass
+
+
+def proton_damaged(proton) -> int:
+    """Nombre de fichiers de Wine réécrits après la fabrication de ce Proton (0 : intact). Les fichiers
+    d'une version publiée ont tous à peu près la même date ; ntdll.so sert de repère."""
+    if not proton:
+        return 0
+    try:
+        ref = (Path(proton).parent / "files/lib/wine/x86_64-unix/ntdll.so").stat().st_mtime
+    except OSError:
+        return 0
+    return sum(1 for f in _wine_files(proton) if f.stat().st_mtime > ref + 86400)
+
+
+def proton_protected(proton) -> bool:
+    try:
+        return not os.access(Path(proton).parent / "files/lib/wine/x86_64-windows/user32.dll", os.W_OK)
+    except OSError:
+        return False
+
+
+def protect_proton(proton) -> int:
+    """Fichiers de Wine en lecture seule : plus rien ne peut les réécrire à travers un lien. Les dossiers
+    restent modifiables (ProtonUp-Qt peut toujours le supprimer)."""
+    n = 0
+    for f in _wine_files(proton):
+        try:
+            mode = f.stat().st_mode
+            if mode & 0o222:
+                os.chmod(f, mode & ~0o222)
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
+def healthy_tool(info: SteamInfo, exclude=None):
+    """(nom, script proton) d'un Proton intact pour WE : le GE-Proton le plus récent, sinon Proton Experimental."""
+    tools = compat_tools(info)
+    ge = sorted(((k, p) for k, p in tools.items() if "GE-Proton" in k and p.exists() and p != exclude
+                 and not proton_damaged(p)), key=lambda kp: _natural(kp[0]))
     if ge:
         return ge[-1]
-    return tools.get("proton_experimental")
+    p = tools.get("proton_experimental")
+    if p and p.exists() and p != exclude:
+        return "proton_experimental", p
+    return None
 
 
 # --- options de lancement (Steam doit être fermé pour les modifier) ------------------------
@@ -252,9 +355,10 @@ def other_game_running() -> bool:
     return False
 
 
-def restart_steam(timeout: float = 30) -> None:
+def restart_steam(timeout: float = 30, info: SteamInfo = None, tool: str = "") -> None:
     """Ferme Steam proprement (de force s'il traîne) puis le relance en lui demandant WE. Débloque une
-    file de lancement coincée (étape « install script » qui ne finit jamais, fenêtre en attente…)."""
+    file de lancement coincée (étape « install script » qui ne finit jamais, fenêtre en attente…).
+    Avec tool : WE passe sur cet outil de compatibilité pendant que Steam est fermé."""
     import signal
     import time
     subprocess.run(["steam", "-shutdown"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
@@ -269,6 +373,8 @@ def restart_steam(timeout: float = 30) -> None:
             except (OSError, ValueError):
                 pass
         time.sleep(2)
+    if tool and info:
+        set_compat_tool(info, tool)
     subprocess.Popen(["steam", "-silent", f"steam://rungameid/{WE_APPID}"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 

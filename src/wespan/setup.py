@@ -101,6 +101,27 @@ def fix_steam_option(log=print) -> bool:
     return True
 
 
+def fix_proton(log=print) -> bool:
+    """Proton de WE abîmé : WE passe sur un Proton intact (Steam fermé puis relancé), protégé en lecture seule."""
+    info = steam.SteamInfo()
+    if not steam.proton_damaged(info.proton):
+        if steam.user_installed(info.proton):
+            steam.protect_proton(info.proton)
+        log("✔ Proton intact (protected)")
+        return True
+    alt = steam.healthy_tool(info, exclude=info.proton)
+    if not alt:
+        log("✘ no intact Proton found: reinstall one (e.g. with ProtonUp-Qt)")
+        return False
+    name, p = alt
+    if steam.user_installed(p):
+        steam.protect_proton(p)
+    log(f"… switching Wallpaper Engine to {name} (Steam is restarted)")
+    steam.restart_steam(info=info, tool=name)
+    log("✔ done")
+    return True
+
+
 def setup(steam_option: bool = False, log=print) -> None:
     kwin_changed = install_packages(log)
     if kwin_changed or not (desktop.kwin_script_enabled() and desktop.kwin_script_loaded()):
@@ -143,6 +164,8 @@ def fix(what: str, log=print) -> None:
         steam.fix_drive_s(info)
     elif what == "steam_option":
         fix_steam_option(log)
+    elif what == "proton":
+        fix_proton(log)
     elif what == "service":
         start_service()
 
@@ -165,6 +188,9 @@ def doctor() -> list[dict]:
     add("we", info.we_dir, "Wallpaper Engine installé", "Wallpaper Engine installed", detail=str(info.we_dir or ""))
     add("proton", info.proton and info.proton.exists(), "Proton trouvé", "Proton found",
         detail=str(info.proton or "lancez WE une fois depuis Steam"))
+    damaged = steam.proton_damaged(info.proton)
+    add("proton_ok", not damaged, "Fichiers de Proton intacts", "Proton files intact", fix="proton",
+        detail=f"{damaged} fichiers réécrits par un autre Proton" if damaged else "")
     add("steam_option", steam.launch_option_ok(info),
         "Option de lancement Steam (WINE_DISABLE_FULLSCREEN_HACK=1)",
         "Steam launch option (WINE_DISABLE_FULLSCREEN_HACK=1)", fix="steam_option",
