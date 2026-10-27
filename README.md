@@ -150,6 +150,11 @@ Open the app → **Diagnostics**: every check has a *Fix* button, and the log ca
 
 - **Still picture that never animates**: Wallpaper Engine isn't running or hasn't opened the wallpaper yet
   — check *Diagnostics*. The first start through Steam takes ~30 s.
+- **Wallpaper Engine never starts until Steam is restarted**: Steam can get stuck before launching it (e.g. on
+  the "install script" step right after login), and every new launch request waits behind it. WE Span then
+  tries Proton directly, and if that fails too, restarts Steam by itself (at most every 10 min, never while
+  another game is running). *Reload wallpaper* in the tray restarts Steam at once in that case. The output of
+  the Proton launch is kept in `~/.cache/wespan/proton-direct.log`.
 - **Clock in a wallpaper showing an old time**: a scene frozen for a long time (screen locked, all windows
   maximized) is reopened when it resumes, so its clock is right again.
 - **Frozen or black picture, wrong date in a scene (e.g. “10 JUN 1859”)**: after hours of running (long

@@ -242,6 +242,37 @@ def steam_running() -> bool:
     return False
 
 
+def other_game_running() -> bool:
+    """Un autre jeu lancé par Steam tourne (le redémarrage de Steam le fermerait)."""
+    for args in _proc_cmdlines():
+        if len(args) > 2 and args[0].endswith(b"/reaper") and args[1] == b"SteamLaunch":
+            m = re.match(rb"AppId=(\d+)$", args[2])
+            if m and m.group(1).decode() != WE_APPID:
+                return True
+    return False
+
+
+def restart_steam(timeout: float = 30) -> None:
+    """Ferme Steam proprement (de force s'il traîne) puis le relance en lui demandant WE. Débloque une
+    file de lancement coincée (étape « install script » qui ne finit jamais, fenêtre en attente…)."""
+    import signal
+    import time
+    subprocess.run(["steam", "-shutdown"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+    t = time.time()
+    while steam_running() and time.time() - t < timeout:
+        time.sleep(1)
+    if steam_running():
+        for c in glob.glob("/proc/[0-9]*/comm"):
+            try:
+                if Path(c).read_text().strip() in ("steam", "steamwebhelper", "reaper"):
+                    os.kill(int(c.split("/")[2]), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
+        time.sleep(2)
+    subprocess.Popen(["steam", "-silent", f"steam://rungameid/{WE_APPID}"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
 # --- préfixe Wine ---------------------------------------------------------------------------
 
 def drive_s_ok(info: SteamInfo) -> bool:

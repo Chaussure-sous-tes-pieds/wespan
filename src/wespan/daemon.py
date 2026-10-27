@@ -21,6 +21,8 @@ log = logging.getLogger("wespan")
 TICK_S = 3
 LAUNCH_COOLDOWN = 90        # s entre deux lancements de WE
 STEAM_WAIT = 60             # s laissés à Steam pour lancer WE, avant de le lancer nous-mêmes par Proton
+DIRECT_WAIT = 25            # s laissés au lancement par Proton, avant de conclure que Steam est coincé
+STEAM_RESTART_COOLDOWN = 600  # s entre deux redémarrages automatiques de Steam
 OPEN_COOLDOWN = 30          # s entre deux réouvertures de la fenêtre
 WE_WARMUP = 12              # s laissés à WE pour démarrer avant d'ouvrir un fond
 GRACE_S = 6                 # s de lecture garantis après l'ouverture d'un fond (avant une éventuelle pause)
@@ -104,6 +106,7 @@ class Daemon(dbus.service.Object):
         self.paused_since = 0.0
         self.steam_launch_at = 0.0
         self.direct_tried = False
+        self.steam_restart_at = 0.0
         self.verify_open = False
         self.last_bad = None                 # (fond, zone dessinée) de la dernière mesure trop petite
         self.dark_edge = set()               # fonds réellement noirs sur un bord (on ne rouvre plus)
@@ -292,6 +295,12 @@ class Daemon(dbus.service.Object):
                     if not steam.we_fps_ok(self.info, int(self.cfg["fps"])):
                         steam.set_we_fps(self.info, int(self.cfg["fps"]))
                     engine.launch_direct(self.info)
+                elif self.direct_tried and self.steam_launch_at and now - self.steam_launch_at > STEAM_WAIT + DIRECT_WAIT \
+                        and now - self.steam_restart_at > STEAM_RESTART_COOLDOWN and not steam.other_game_running():
+                    # ni Steam ni Proton n'ont rien donné : Steam est coincé (file de lancement bloquée, par
+                    # ex. sur l'étape « install script » au démarrage) et le redemander ne sert à rien
+                    log.warning("Wallpaper Engine still not running: restarting Steam")
+                    self._restart_steam(now)
                 elif now - self.last_launch > LAUNCH_COOLDOWN and (self.last_launch == 0 or self.cfg["restart_engine"]):
                     self.last_launch = self.steam_launch_at = now
                     self.direct_tried = False
@@ -926,11 +935,23 @@ class Daemon(dbus.service.Object):
     @dbus.service.method(DBUS_IFACE, in_signature="", out_signature="")
     def RestartEngine(self):
         self.user_stopped = False
+        now = time.time()
+        if not engine.we_pid() and self.steam_launch_at and now - self.steam_launch_at > STEAM_WAIT \
+                and not steam.other_game_running():
+            # WE ne tourne pas alors que Steam devait le lancer : c'est Steam qu'il faut relancer
+            log.warning("restart requested while Steam is stuck: restarting Steam")
+            self._restart_steam(now)
+            return
 
         def job():
             engine.quit_engine()
             time.sleep(2)
         self.worker.submit("restart", job, lambda _: self._relaunch())
+
+    def _restart_steam(self, now):
+        self.steam_restart_at = self.last_launch = self.steam_launch_at = now
+        self.direct_tried = False
+        self.worker.submit("restart-steam", steam.restart_steam)
 
     def _relaunch(self):
         self.window_size = None

@@ -7,10 +7,12 @@ import signal
 import subprocess
 from pathlib import Path
 
-from .settings import WINDOW_TITLE, WE_APPID
+from .settings import CACHE_DIR, WINDOW_TITLE, WE_APPID
 from .steam import SteamInfo
 
 log = logging.getLogger("wespan.engine")
+
+DIRECT_LOG = CACHE_DIR / "proton-direct.log"
 
 
 _pid_cache = None
@@ -77,10 +79,13 @@ def launch_direct(info: SteamInfo) -> bool:
         return False
     env = info.env()
     env.update({"SteamAppId": WE_APPID, "SteamGameId": WE_APPID, "WINE_DISABLE_FULLSCREEN_HACK": "1"})
+    log.info("starting Wallpaper Engine through Proton (output: %s)", DIRECT_LOG)
     try:
-        subprocess.Popen([str(info.proton), "run", win_path(info, info.we_dir / "wallpaper64.exe")], env=env,
-                         cwd=str(info.we_dir), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True)
+        DIRECT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(DIRECT_LOG, "wb") as out:      # (pour savoir pourquoi, si ça échoue)
+            subprocess.Popen([str(info.proton), "run", win_path(info, info.we_dir / "wallpaper64.exe")], env=env,
+                             cwd=str(info.we_dir), stdout=out, stderr=subprocess.STDOUT,
+                             start_new_session=True)
         return True
     except OSError as e:
         log.warning("direct launch failed: %s", e)
