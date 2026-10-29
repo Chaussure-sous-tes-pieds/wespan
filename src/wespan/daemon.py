@@ -383,7 +383,8 @@ class Daemon(dbus.service.Object):
         Juste après un changement d'écrans, Wine peut encore avoir l'ancienne disposition : WE
         dessine alors à l'ancienne taille dans un coin de la fenêtre et laisse le reste noir. On
         rouvre alors la fenêtre (délais croissants) tant que ce n'est pas bon."""
-        if self.reopen_at and now > self.reopen_at:
+        # pas pendant « afficher le bureau » : la nouvelle fenêtre le ferait annuler par KWin
+        if self.reopen_at and now > self.reopen_at and not self.showing_desktop:
             self.reopen_at = 0.0
             self.open_current(recreate=True)
             return
