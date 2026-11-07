@@ -88,7 +88,7 @@ is edited, so it is closed and restarted automatically).
 - **System tray icon** (optional, on by default): click to show/hide the window, menu to pause/mute. With it,
   closing the window just tucks it away; the wallpaper keeps running in any case (it's driven by the service).
 - **Right-click the desktop**: mute/unmute, pause/resume, reload wallpaper (frozen/black picture, wrong date: restarts Wallpaper Engine), open settings.
-- **Command line**: `wespan status | set <id> | mute | unmute | volume 40 | pause | resume | offset HDMI-A-1 0 40 | restart | doctor`
+- **Command line**: `wespan status | set <id> | mute | unmute | volume 40 | pause | resume | offset HDMI-A-1 0 40 | view fit | restart | doctor`
 
 ### Your library
 
@@ -132,6 +132,19 @@ locked. Pausing never removes the wallpaper: the last frame stays.
 Plasma knows where your screens are in pixels, not physically. In *Screens* you can shift each screen's part
 of the picture until the horizon lines up; a live preview shows the result and zoom adapts automatically so
 no black bars appear.
+
+### Framing (zoom, fit, position)
+
+Some wallpapers don't suit your screens: edges cut off, the interesting part off-screen, or a scene that
+looks wrong once spanned. *Screens → Framing of this wallpaper* sets, **per wallpaper**:
+- **Fill** (default: crops the edges, never black bars), **Fit** (the whole wallpaper, black bars) or
+  **Stretch** (fills everything, distorts);
+- **Zoom** from 25 % to 400 %, and the **horizontal/vertical position** (−100…100: up to the image's edge).
+
+Zoom and position apply instantly. *Fit*, *Stretch* and zooming out below 100 % need the whole scene, so
+Wallpaper Engine then renders it at its own proportions (read from `scene.pkg`; a few seconds to reload).
+*Use for all wallpapers* makes it the default for every wallpaper that has no framing of its own.
+Command line: `wespan view fit`, `wespan view fill 130 0 -40`, `wespan view reset`.
 
 ## Languages
 
@@ -194,7 +207,8 @@ Open the app → **Diagnostics**: every check has a *Fix* button, and the log ca
 | Steam/Proton | `src/wespan/steam.py` | libraries, Proton detection, lossless VDF editing (launch option), `S:` drive, WE `config.json` fps |
 | KDE glue | `src/wespan/desktop.py` | KWin window rule, KWin script, Plasma wallpaper plugin, autostart |
 | KWin script | `kwin/wespan/` | keeps the window off-screen, reports per-screen coverage/maximized/fullscreen |
-| Plasma plugin | `plasma/org.wespan.wallpaper/` | `ScreencastingRequest` + `PipeWireSourceItem`, per-screen crop, shared auto-zoom, still-preview fallback |
+| Plasma plugin | `plasma/org.wespan.wallpaper/` | `ScreencastingRequest` + `PipeWireSourceItem`, per-screen crop, shared auto-zoom, framing, still-preview fallback |
+| Framing | `src/wespan/framing.py` | per-wallpaper fill/fit/stretch, zoom, position; native size from `scene.pkg` / `ffprobe` |
 | Settings app | `src/wespan/gui/` | PySide6 + Kirigami |
 
 Findings worth knowing (they cost a night of debugging):
@@ -202,6 +216,9 @@ Findings worth knowing (they cost a night of debugging):
 - `_NET_WM_WINDOW_TYPE_DESKTOP` (set with `xprop`) keeps the hidden window out of Show Desktop; the equivalent
   KWin rule is ignored for it.
 - Wine won't render beyond the size of the virtual screen: the window is sized to the screens' bounding box.
+- Wallpaper Engine always fills its window by cropping the scene around its centre, whatever the window's
+  shape. To show a whole scene, the window gets the scene's own aspect ratio (`general.orthogonalprojection`
+  in `scene.json`, inside `scene.pkg`) and the Plasma plugin scales it.
 - When switching wallpapers, Wallpaper Engine may reuse its window and not redraw its bottom rows (stale
   pieces of the previous wallpaper remain): WE Span always opens a fresh window.
 - Wallpaper Engine's video player under Proton stutters (software decode, ~10–20 fps for 4K60) and dies when
@@ -265,6 +282,11 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
   clic droit sur un dossier → *Masquer dans « Tous »* pour l'exclure),
   favoris (l'étoile), tri et filtres comme dans Wallpaper Engine (date d'ajout, mise à jour, popularité,
   résolution, genre, classement d'âge, réagit au son, personnalisable…).
+- **Cadrage** (*Écrans → Cadrage de ce fond*), réglé **par fond** : *Remplir* (par défaut, rogne les bords,
+  jamais de bande noire), *Ajuster* (fond entier, bandes noires) ou *Étirer* ; **zoom** de 25 à 400 % et
+  **position** horizontale/verticale. Zoom et position s'appliquent tout de suite ; *Ajuster*, *Étirer* et le
+  dézoom font rendre la scène à ses proportions d'origine (quelques secondes). *Utiliser pour tous les fonds* en
+  fait le cadrage par défaut. En ligne de commande : `wespan view fit`, `wespan view fill 130 0 -40`, `wespan view reset`.
 - **Personnaliser** : clic droit → *Personnaliser…* affiche les réglages propres au fond (format de l'horloge,
   couleurs, effets…), mémorisés ; chaque changement recharge le fond (sans coupure visible).
 - **Rechercher** : parcourir le Steam Workshop depuis l'application (tendances sur un jour à un an, mieux

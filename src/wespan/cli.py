@@ -16,6 +16,8 @@ commands:
   volume <0-150>
   pause | resume | togglepause
   offset <screen> <x> <y>  shift one screen's part of the picture (e.g. HDMI-A-1 0 40)
+  view fill|fit|stretch [zoom%] [x] [y]   framing of the current wallpaper (x, y: -100..100)
+  view reset             back to the default framing
   restart                restart Wallpaper Engine
   doctor                 check the installation
   setup [--steam]        install/repair the KDE integration (--steam: also set the Steam launch option; closes Steam)
@@ -93,6 +95,14 @@ def main(argv=None):
         print("paused" if d.TogglePause() else "playing")
     elif c == "offset":
         d.SetOffset(args[0], int(args[1]), int(args[2]))
+    elif c == "view":
+        st = json.loads(d.GetState())
+        if not args or args[0] == "reset":
+            return 0 if d.SetView(st.get("wallpaper", ""), "null") else 1
+        v = {"fit": args[0]}
+        for k, val in zip(("zoom", "x", "y"), args[1:]):
+            v[k] = int(val)
+        return 0 if d.SetView(st.get("wallpaper", ""), json.dumps(v)) else 1
     elif c == "restart":
         d.RestartEngine()
     elif c == "quit":

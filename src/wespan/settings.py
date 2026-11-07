@@ -57,6 +57,9 @@ DEFAULTS = {
     "favorites": [],
     "folders": [],
     "wallpaper_props": {},           # {id: {propriété: valeur}} (valeurs comme dans project.json)
+    # cadrage (voir framing.py) : {id: {"fit": "fill"|"fit"|"stretch", "zoom": %, "x": -100..100, "y": …}}
+    "views": {},
+    "view_default": {"fit": "fill", "zoom": 100, "x": 0, "y": 0},
     "proton": "",                    # chemin du script proton (auto-détecté si vide)
 }
 

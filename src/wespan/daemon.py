@@ -13,7 +13,7 @@ import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 
-from . import desktop, engine, media, overlay, settings as S, steam
+from . import desktop, engine, framing, media, overlay, settings as S, steam
 from .settings import DBUS_IFACE, DBUS_NAME, DBUS_PATH, RUNTIME_DIR, STATE_FILE, WINDOW_TITLE
 
 log = logging.getLogger("wespan")
@@ -219,7 +219,22 @@ class Daemon(dbus.service.Object):
         if not self.cfg["canvas_auto"] and all(self.cfg.get("canvas") or [0, 0]):
             return tuple(self.cfg["canvas"])
         _, _, w, h = self.bbox()
+        # cadrage qui montre le fond entier : WE rend la scène à ses proportions d'origine
+        # (sinon il la rogne pour remplir la fenêtre), le fond Plasma la place
+        if framing.needs_native(self.view()):
+            n = self.native_size()
+            if n:
+                return framing.fit_inside(*n, w, h)
         return w, h
+
+    def view(self, wid=None):
+        """Cadrage du fond : le sien s'il en a un, sinon celui par défaut."""
+        wid = str(wid or self.cfg["wallpaper"])
+        own = (self.cfg.get("views") or {}).get(wid)
+        return framing.normalize(own if own is not None else self.cfg.get("view_default"))
+
+    def native_size(self, wid=None):
+        return framing.native_size(steam.wallpaper_path(self.info, str(wid or self.cfg["wallpaper"])))
 
     def content_size(self, w, h):
         c = self.cfg["content"].get(f"{w}x{h}")
@@ -364,7 +379,7 @@ class Daemon(dbus.service.Object):
                 if self.window_size and self.window_size != (w, h) and not self.worker.busy \
                         and now - self.layout_changed > LAYOUT_SETTLE \
                         and (now - self.layout_changed > X_SCREEN_WAIT
-                             or desktop.x_screen_size() in (None, (w, h))):
+                             or desktop.x_screen_size() in (None, tuple(self.bbox()[2:]))):
                     log.info("render size %s -> %s: re-creating the window", self.window_size, (w, h))
                     self.open_current(recreate=True)
                 elif not self.worker.busy and not self.open_pending:
@@ -721,6 +736,8 @@ class Daemon(dbus.service.Object):
             "uuid": self.uuids.get(self.title, "") if self.xid else "",
             "window": [w, h], "content": [cw, ch],
             "offsets": self.cfg["offsets"],
+            "view": self.view(), "ownView": str(wp) in (self.cfg.get("views") or {}),
+            "native": list(self.native_size() or []) or None,
             "muted": self.cfg["muted"], "volume": self.cfg["volume"],
             "paused": self.video_paused() if vfile else self.paused, "pauseReason": self.pause_reason, "manualPause": self.manual_pause,
             "running": bool(engine.we_pid()), "window_ok": bool(self.xid),
@@ -745,7 +762,7 @@ class Daemon(dbus.service.Object):
     def persist_state(self, st):
         """Copie durable de ce qu'il faut au fond Plasma pour s'afficher avant le démarrage du
         service (ouverture de session) : dernière image, géométrie, vidéo…"""
-        keep = {k: st[k] for k in ("window", "content", "offsets", "muted", "volume", "wallpaper",
+        keep = {k: st[k] for k in ("window", "content", "offsets", "view", "muted", "volume", "wallpaper",
                                    "preview", "screens", "lang", "mode", "video", "audioScreen", "frame")}
         keep["frameInfo"] = self.frame
         js = json.dumps(keep, ensure_ascii=False, sort_keys=True)
@@ -893,6 +910,38 @@ class Daemon(dbus.service.Object):
         if str(wid) == self.cfg["wallpaper"] and self.xid and not self.video_mode():
             self.open_current(recreate=True)
         self.write_state()
+        return True
+
+    @dbus.service.method(DBUS_IFACE, in_signature="ss", out_signature="b")
+    def SetView(self, wid, value_json):
+        """Cadrage d'un fond ({"fit", "zoom", "x", "y"}) ; null = revenir au cadrage par défaut.
+        Zoom/position : appliqués en direct par le fond Plasma. Passer à « ajuster »/« étirer »/
+        dézoomer change la taille de rendu de WE : tick() recrée alors sa fenêtre."""
+        try:
+            val = json.loads(value_json)
+        except ValueError:
+            return False
+        views = self.cfg.setdefault("views", {})
+        if val is None:
+            views.pop(str(wid), None)
+        else:
+            views[str(wid)] = framing.normalize(val)
+        S.save(self.cfg)
+        self.write_state()
+        self.tick()
+        return True
+
+    @dbus.service.method(DBUS_IFACE, in_signature="s", out_signature="b")
+    def SetDefaultView(self, value_json):
+        """Cadrage de tous les fonds qui n'ont pas le leur."""
+        try:
+            val = json.loads(value_json)
+        except ValueError:
+            return False
+        self.cfg["view_default"] = framing.normalize(val)
+        S.save(self.cfg)
+        self.write_state()
+        self.tick()
         return True
 
     @dbus.service.method(DBUS_IFACE, in_signature="i", out_signature="")

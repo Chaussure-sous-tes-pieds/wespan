@@ -209,6 +209,21 @@ class Backend(QObject):
     def setOffset(self, screen, x, y):
         self._call("SetOffset", screen, int(x), int(y))
 
+    @Slot(str, "QVariant")
+    def setView(self, wid, value):
+        """Cadrage d'un fond ; None = revenir au cadrage par défaut."""
+        if hasattr(value, "toVariant"):
+            value = value.toVariant()
+        self._call("SetView", wid, json.dumps(value))
+        self.poll()
+
+    @Slot("QVariant")
+    def setDefaultView(self, value):
+        if hasattr(value, "toVariant"):
+            value = value.toVariant()
+        self._call("SetDefaultView", json.dumps(value))
+        self.poll()
+
     @Slot()
     def restartEngine(self):
         self._call("RestartEngine")

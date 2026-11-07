@@ -40,8 +40,11 @@ WallpaperItem {
         return o ? Qt.point(o.x || 0, o.y || 0) : Qt.point(0, 0);
     }
 
-    // Rectangle englobant les écrans ; zoom commun, juste suffisant pour que chaque écran
-    // (décalé) reste dans la zone rendue => continuité entre écrans et jamais de noir.
+    // Rectangle englobant les écrans ; échelle commune => image continue d'un écran à l'autre.
+    // Cadrage (réglable par fond) : « remplir » = zoom juste suffisant pour que chaque écran (décalé)
+    // reste dans la zone rendue (jamais de noir) ; « ajuster » = fond entier visible (bandes noires) ;
+    // « étirer » = déformé pour couvrir. Puis zoom (%) et position (-100..100 : jusqu'au bord).
+    readonly property var view: st.view || ({ fit: "fill", zoom: 100, x: 0, y: 0 })
     property var layout: computeLayout()
     function computeLayout() {
         const s = Qt.application.screens;
@@ -50,31 +53,42 @@ WallpaperItem {
             x0 = Math.min(x0, s[i].virtualX); y0 = Math.min(y0, s[i].virtualY);
             x1 = Math.max(x1, s[i].virtualX + s[i].width); y1 = Math.max(y1, s[i].virtualY + s[i].height);
         }
-        const bcx = (x0 + x1) / 2, bcy = (y0 + y1) / 2;
-        let z = 1;   // jamais sous 1:1 (netteté)
+        const bcx = (x0 + x1) / 2, bcy = (y0 + y1) / 2, bw = x1 - x0, bh = y1 - y0;
+        let ax = 0, ay = 0;   // échelle (par axe) pour couvrir chaque écran décalé
         for (let i = 0; i < s.length; i++) {
             const o = offsetOf(s[i].name);
             const l = s[i].virtualX - o.x - bcx, r = l + s[i].width;
             const tp = s[i].virtualY - o.y - bcy, b = tp + s[i].height;
-            z = Math.max(z, Math.abs(l) / (contW / 2), Math.abs(r) / (contW / 2),
-                            Math.abs(tp) / (contH / 2), Math.abs(b) / (contH / 2));
+            ax = Math.max(ax, Math.abs(l) / (contW / 2), Math.abs(r) / (contW / 2));
+            ay = Math.max(ay, Math.abs(tp) / (contH / 2), Math.abs(b) / (contH / 2));
         }
-        return { bcx: bcx, bcy: bcy, zoom: z };
+        const v = view, k = (v.zoom || 100) / 100;
+        let zx, zy;
+        if (v.fit === "fit") { zx = zy = Math.min(bw / contW, bh / contH); }
+        else if (v.fit === "stretch") { zx = ax; zy = ay; }
+        else { zx = zy = Math.max(1, ax, ay); }   // jamais sous 1:1 (netteté)
+        zx *= k; zy *= k;
+        // position : 100 = bord de l'image contre le bord du rectangle des écrans
+        const panX = (v.x || 0) / 100 * Math.abs(contW * zx - bw) / 2;
+        const panY = (v.y || 0) / 100 * Math.abs(contH * zy - bh) / 2;
+        return { bcx: bcx + panX, bcy: bcy + panY, zx: zx, zy: zy };
     }
     function relayout() { layout = computeLayout(); }
     onOffsetsChanged: relayout()
     onContWChanged: relayout()
     onContHChanged: relayout()
+    onViewChanged: relayout()
     Connections {
         target: Qt.application
         function onScreensChanged() { root.relayout(); root.restartStream(); }
     }
 
     readonly property point myOffset: offsetOf(Screen.name)
-    readonly property real zoomF: layout.zoom
+    readonly property real zoomX: layout.zx
+    readonly property real zoomY: layout.zy
     // position (dans cet écran) du coin haut-gauche de la zone rendue
-    readonly property real originX: -contW / 2 * zoomF + layout.bcx + myOffset.x - Screen.virtualX
-    readonly property real originY: -contH / 2 * zoomF + layout.bcy + myOffset.y - Screen.virtualY
+    readonly property real originX: -contW / 2 * zoomX + layout.bcx + myOffset.x - Screen.virtualX
+    readonly property real originY: -contH / 2 * zoomY + layout.bcy + myOffset.y - Screen.virtualY
 
     Rectangle { anchors.fill: parent; color: "black" }
 
@@ -89,7 +103,7 @@ WallpaperItem {
         Image {
             id: frameImage
             x: root.originX; y: root.originY
-            width: root.winW * root.zoomF; height: root.winH * root.zoomF
+            width: root.winW * root.zoomX; height: root.winH * root.zoomY
             source: root.st.frame ? "file://" + root.st.frame.path + "?" + root.st.frame.time : ""
             asynchronous: true
             cache: false
@@ -100,9 +114,9 @@ WallpaperItem {
         }
         Image {
             x: root.originX; y: root.originY
-            width: root.contW * root.zoomF; height: root.contH * root.zoomF
+            width: root.contW * root.zoomX; height: root.contH * root.zoomY
             source: root.st.preview && !root.st.frame ? "file://" + root.st.preview : ""
-            fillMode: Image.PreserveAspectCrop
+            fillMode: root.view.fit === "stretch" ? Image.Stretch : Image.PreserveAspectCrop
             asynchronous: true
             cache: false
             visible: viewport.waiting && !frameImage.visible && status === Image.Ready
@@ -118,7 +132,7 @@ WallpaperItem {
             visible: requestA.uuid !== "" && nodeId > 0
             z: root.active === 0 ? 2 : 1
             x: root.originX; y: root.originY
-            width: root.winW * root.zoomF; height: root.winH * root.zoomF
+            width: root.winW * root.zoomX; height: root.winH * root.zoomY
             onShowingChanged: root.maybeSwap()
         }
         PipeWire.PipeWireSourceItem {
@@ -128,7 +142,7 @@ WallpaperItem {
             visible: requestB.uuid !== "" && nodeId > 0
             z: root.active === 1 ? 2 : 1
             x: root.originX; y: root.originY
-            width: root.winW * root.zoomF; height: root.winH * root.zoomF
+            width: root.winW * root.zoomX; height: root.winH * root.zoomY
             onShowingChanged: root.maybeSwap()
         }
 
@@ -138,8 +152,9 @@ WallpaperItem {
             visible: root.videoMode
             z: 3
             x: root.originX; y: root.originY
-            width: root.contW * root.zoomF; height: root.contH * root.zoomF
-            fillMode: VideoOutput.PreserveAspectCrop
+            width: root.contW * root.zoomX; height: root.contH * root.zoomY
+            // (« ajuster »/dézoom : le service a déjà donné à ce rectangle les proportions de la vidéo)
+            fillMode: root.view.fit === "stretch" ? VideoOutput.Stretch : VideoOutput.PreserveAspectCrop
         }
     }
 
