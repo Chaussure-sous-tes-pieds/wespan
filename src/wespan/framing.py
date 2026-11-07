@@ -1,9 +1,9 @@
 """Cadrage d'un fond : remplir / ajuster / étirer, zoom et position, réglables par fond.
 
 Wallpaper Engine remplit toujours sa fenêtre en rognant la scène au centre, quelle que soit la
-forme de la fenêtre. Pour pouvoir montrer le fond entier (ajuster, étirer, dézoomer), on lui fait
-donc rendre la scène dans une fenêtre aux proportions d'origine de la scène, et c'est le fond
-Plasma qui place et met à l'échelle l'image (voir main.qml). Sans réglage, rien ne change : la
+forme de la fenêtre. Dès qu'un fond a un cadrage, on lui fait donc rendre la scène dans une fenêtre
+aux proportions d'origine de la scène, et c'est le fond Plasma qui place et met à l'échelle l'image
+(voir main.qml) : les changements suivants sont instantanés. Sans réglage, rien ne change : la
 fenêtre couvre tous les écrans, comme avant (image la plus nette).
 """
 import json
@@ -39,10 +39,12 @@ def is_default(v) -> bool:
 
 
 def needs_native(v) -> bool:
-    """Ce cadrage demande-t-il l'image entière du fond (pas seulement la partie que WE garde
-    en remplissant la fenêtre) ?"""
-    v = normalize(v)
-    return v["fit"] != "fill" or v["zoom"] < 100
+    """WE doit-il rendre le fond entier, à ses proportions d'origine ? Dès qu'un cadrage est réglé
+    (même « remplir » zoomé) : passer ensuite de remplir à ajuster/étirer, zoomer ou déplacer se fait
+    alors dans le fond Plasma, sans recréer la fenêtre de WE (lent, et à une taille plus grande la
+    1re fenêtre de WE dessine encore à l'ancienne taille). Sans réglage : fenêtre = tous les écrans,
+    image la plus nette, comme avant."""
+    return not is_default(v)
 
 
 def fit_inside(nw: int, nh: int, bw: int, bh: int) -> tuple[int, int]:

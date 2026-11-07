@@ -34,7 +34,8 @@ Kirigami.ScrollablePage {
         view = v;
         sendView.restart();
     }
-    function needsNative(v) { return !!v && (v.fit !== "fill" || v.zoom < 100); }
+    // (comme framing.needs_native : tout cadrage réglé => WE rend le fond entier, à ses proportions)
+    function needsNative(v) { return !!v && (v.fit !== "fill" || v.zoom !== 100 || v.x !== 0 || v.y !== 0); }
     Timer {
         id: sendView
         interval: 500
@@ -279,8 +280,8 @@ Kirigami.ScrollablePage {
                    ? " " + page.t("Ce fond ne peut pas être montré en entier (taille d'origine inconnue) : seuls le zoom et la position s'appliquent.",
                                   "This wallpaper cannot be shown whole (original size unknown): only zoom and position apply.")
                    : page.needsNative(page.view) && page.st.mode !== "video"
-                   ? " " + page.t("Wallpaper Engine rend alors la scène à ses proportions d'origine (rechargement de quelques secondes).",
-                                  "Wallpaper Engine then renders the scene at its original proportions (a few seconds to reload).")
+                   ? " " + page.t("Wallpaper Engine rend alors la scène entière, à ses proportions d'origine (quelques secondes au premier réglage, puis tout est instantané).",
+                                  "Wallpaper Engine then renders the whole scene at its original proportions (a few seconds for the first change, then everything is instant).")
                    : "")
         }
         QQC2.Button {

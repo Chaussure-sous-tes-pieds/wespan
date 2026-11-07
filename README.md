@@ -141,8 +141,9 @@ looks wrong once spanned. *Screens → Framing of this wallpaper* sets, **per wa
   **Stretch** (fills everything, distorts);
 - **Zoom** from 25 % to 400 %, and the **horizontal/vertical position** (−100…100: up to the image's edge).
 
-Zoom and position apply instantly. *Fit*, *Stretch* and zooming out below 100 % need the whole scene, so
-Wallpaper Engine then renders it at its own proportions (read from `scene.pkg`; a few seconds to reload).
+As soon as a wallpaper has a framing, Wallpaper Engine renders the whole scene at its own proportions
+(read from `scene.pkg`; a few seconds, once); after that, every change is instant. *Reset* goes back to the
+sharpest picture (rendered at the size of all your screens).
 *Use for all wallpapers* makes it the default for every wallpaper that has no framing of its own.
 Command line: `wespan view fit`, `wespan view fill 130 0 -40`, `wespan view reset`.
 
@@ -284,8 +285,8 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
   résolution, genre, classement d'âge, réagit au son, personnalisable…).
 - **Cadrage** (*Écrans → Cadrage de ce fond*), réglé **par fond** : *Remplir* (par défaut, rogne les bords,
   jamais de bande noire), *Ajuster* (fond entier, bandes noires) ou *Étirer* ; **zoom** de 25 à 400 % et
-  **position** horizontale/verticale. Zoom et position s'appliquent tout de suite ; *Ajuster*, *Étirer* et le
-  dézoom font rendre la scène à ses proportions d'origine (quelques secondes). *Utiliser pour tous les fonds* en
+  **position** horizontale/verticale. Dès le premier réglage, Wallpaper Engine rend la scène entière à ses
+  proportions d'origine (quelques secondes, une fois) ; ensuite tout est instantané. *Utiliser pour tous les fonds* en
   fait le cadrage par défaut. En ligne de commande : `wespan view fit`, `wespan view fill 130 0 -40`, `wespan view reset`.
 - **Personnaliser** : clic droit → *Personnaliser…* affiche les réglages propres au fond (format de l'horloge,
   couleurs, effets…), mémorisés ; chaque changement recharge le fond (sans coupure visible).
