@@ -24,15 +24,19 @@ STEAM_WAIT = 60             # s laissés à Steam pour lancer WE, avant de le la
 DIRECT_WAIT = 25            # s laissés au lancement par Proton, avant de conclure que Steam est coincé
 STEAM_RESTART_COOLDOWN = 600  # s entre deux redémarrages automatiques de Steam
 OPEN_COOLDOWN = 30          # s entre deux réouvertures de la fenêtre
-WE_WARMUP = 12              # s laissés à WE pour démarrer avant d'ouvrir un fond
+WE_WARMUP = float(os.environ.get("WESPAN_WARMUP", "3"))   # s laissés à WE pour démarrer avant d'ouvrir un fond
+                                                          # (12 avant 1.3.2 : ~9 s de plus à chaque lancement)
+WE_STARTING = 25            # s après l'apparition de WE : un échec d'ouverture ne compte pas (il démarre)
 GRACE_S = 6                 # s de lecture garantis après l'ouverture d'un fond (avant une éventuelle pause)
 LAYOUT_SETTLE = 8           # s de disposition d'écrans stable avant de recréer la fenêtre
 X_SCREEN_WAIT = 30          # s max à attendre que l'écran Xwayland ait la nouvelle taille
 VERIFY_WINDOW = 600         # s après un changement d'écrans pendant lesquels on vérifie chaque ouverture
 VERIFY_DELAY = 3            # s après l'ouverture avant de mesurer ce que WE dessine
+GROW_REOPEN_MS = int(os.environ.get("WESPAN_GROW_MS", "4000"))   # rendu agrandi : 2e ouverture après ce délai
 REOPEN_DELAYS = (10, 20, 40, 60, 120, 240)   # s avant chaque nouvel essai si WE dessine trop petit
 REOPEN_DELAYS_QUICK = (2, 8, 30)             # (pareil, hors changement d'écrans : souvent bon du 1er coup)
-VIDEO_QUIT_DELAY = 60       # s de fond vidéo avant de fermer WE (inutile pour une vidéo)
+VIDEO_QUIT_DELAY = 300      # s de fond vidéo avant de fermer WE (inutile pour une vidéo ; pas trop tôt : en
+                            # parcourant les fonds, revenir sur une scène relancerait WE, ~15 s)
 LONG_PAUSE = 120            # s : au-delà, on rouvre la scène à la reprise (horloges des fonds en retard)
 SNAPSHOT_EVERY = 600        # s entre deux captures de la dernière image (affichée à l'ouverture de session)
 HEALTH_EVERY = 60           # s entre deux contrôles « l'image de la scène bouge-t-elle encore ? »
@@ -98,6 +102,9 @@ class Daemon(dbus.service.Object):
         self.layout_changed = 0.0
         self.cover_until = 0.0               # jusque-là : le fond Plasma montre la dernière bonne image (rendu WE faux)
         self.verify_at = 0.0                 # mesure prévue de la zone dessinée par WE
+        self.hold_title = ""                 # fenêtre encore montrée pendant qu'on rouvre la nouvelle (rendu agrandi)
+        self.hold_info = None                # (sa taille, son fond) : le fond Plasma la place comme avant
+        self.shown_wallpaper = ""
         self.reopen_at = 0.0                 # réouverture prévue (WE dessinait trop petit)
         self.bad_renders = 0
         self.video_since = 0.0
@@ -278,7 +285,9 @@ class Daemon(dbus.service.Object):
         return bool(self.cfg.get("native_video", True)) and self.wallpaper_info()[1] is not None
 
     def next_title(self):
-        return f"{WINDOW_TITLE}-b" if self.title == f"{WINDOW_TITLE}-a" else f"{WINDOW_TITLE}-a"
+        # (3 titres : pendant un agrandissement, l'ancienne fenêtre reste montrée en plus des deux autres)
+        busy = {self.title, self.hold_title}
+        return next(f"{WINDOW_TITLE}-{c}" for c in "abc" if f"{WINDOW_TITLE}-{c}" not in busy)
 
     # --- supervision ----------------------------------------------------------------------
 
@@ -362,7 +371,9 @@ class Daemon(dbus.service.Object):
                 if xid not in self.xid_marked and engine.mark_desktop_type(xid):
                     self.xid_marked.add(xid)
             # fenêtres orphelines (ancienne version, fermeture ignorée par WE…) : on les ferme
-            stray = [t for t in wins if t != self.title]
+            if self.hold_title and now - self.last_open > 30 and not self.open_pending:
+                self.hold_title, self.hold_info = "", None   # (2e ouverture ratée : pas indéfiniment)
+            stray = [t for t in wins if t not in (self.title, self.hold_title)]
             if stray and self.xid and not self.worker.busy and not self.open_pending \
                     and now - self.last_open > 10:
                 info = self.info
@@ -482,17 +493,27 @@ class Daemon(dbus.service.Object):
         w, h = self.canvas_size()
         need_new = recreate or self.window_size not in (None, (w, h)) or not desktop.rule_ok(w, h)
         info = self.info
+        # Rendu qui GRANDIT (ex. fond cadré → fond normal) : une fenêtre de WE ouverte dans les secondes
+        # qui suivent dessine à une taille fausse (ex. 3328 sur 3640) ; une ouverte ~4 s plus tard est
+        # bonne. Avant : vérification puis réouverture, ~20 s d'image fausse ou figée. Maintenant :
+        # l'ancienne fenêtre reste affichée, la 1re (fausse) n'est pas montrée, la 2e suit à 4 s.
+        old = self.window_size
+        grow_first = bool(self.xid and old and (w > old[0] or h > old[1]))
+        old_wallpaper = self.shown_wallpaper
 
         self.open_pending = True
         old_title = self.title if self.xid else ""
         new_title = self.next_title()
+
+        wid_opened = self.cfg["wallpaper"]
 
         def job():
             nonlocal pj
             self.open_pending = False
             pj = steam.wallpaper_path(info, self.cfg["wallpaper"]) or pj
             # réglages personnalisés : WE ouvre une copie (liens) du fond avec vos valeurs par défaut
-            wid = self.cfg["wallpaper"]
+            nonlocal wid_opened
+            wid = wid_opened = self.cfg["wallpaper"]
             pj = overlay.build(info, pj, wid, dict(self.cfg["wallpaper_props"].get(wid) or {}))
             self.opened_wallpaper = self.cfg["wallpaper"]
             if need_new:
@@ -522,7 +543,8 @@ class Daemon(dbus.service.Object):
                 return
             if not ok:
                 log.warning("failed to open wallpaper %s", self.cfg["wallpaper"])
-                self.open_failures += 1
+                if time.time() - self.we_seen_since > WE_STARTING:
+                    self.open_failures += 1
                 if self.open_failures >= 2:
                     self.engine_stuck("it no longer opens wallpapers")
                 self.tick()
@@ -531,17 +553,26 @@ class Daemon(dbus.service.Object):
             self.health_at = time.time()          # premier contrôle dans HEALTH_EVERY s
             self.title = new_title
             self.window_size = (w, h)
+            self.shown_wallpaper = wid_opened
             self.sink_idx = None
             self.grace_until = time.time() + GRACE_S
             self.verify_at = time.time() + VERIFY_DELAY
             self.verify_open = True
             log.info("wallpaper %s opened at %dx%d (%s)", self.cfg["wallpaper"], w, h, new_title)
+            if grow_first:
+                log.info("render grew from %dx%d: opening once more (the first window draws at a wrong size)", *old)
+                self.hold_title = old_title          # on continue de montrer l'ancienne
+                self.hold_info = (old, old_wallpaper)
+                self.verify_at = 0.0
+                GLib.timeout_add(GROW_REOPEN_MS, lambda: (self.open_current(recreate=True), False)[1])
             self.tick()
             self.pause_tick(force=True)
-            if old_title and old_title != new_title:
+            if old_title and old_title != new_title and not grow_first:
+                held, self.hold_title, self.hold_info = self.hold_title, "", None
                 # laisse le plugin basculer sur le nouveau flux avant de fermer l'ancien
                 GLib.timeout_add_seconds(3, lambda: (self.worker.submit(
-                    "close-old", lambda: engine.close_wallpaper(info, old_title), self.closed), False)[1])
+                    "close-old", lambda: all([engine.close_wallpaper(info, t) for t in (old_title, held) if t]),
+                    self.closed), False)[1])
 
         self.worker.submit("open", job, done)
 
@@ -721,6 +752,11 @@ class Daemon(dbus.service.Object):
     def state(self):
         vfile = self.wallpaper_info()[1] if self.cfg.get("native_video", True) else None
         w, h = (self.canvas_size() if vfile else (self.window_size or self.canvas_size()))
+        # cadrage du fond dont la fenêtre est affichée (pendant une ouverture, c'est encore l'ancien)
+        view = self.view() if vfile else self.view(self.shown_wallpaper or None)
+        if self.hold_info and not vfile:          # ancienne fenêtre encore montrée (voir open_current)
+            (w, h), hw = self.hold_info
+            view = self.view(hw)
         cw, ch = self.content_size(w, h)
         wp = self.cfg["wallpaper"]
         preview = ""
@@ -733,10 +769,10 @@ class Daemon(dbus.service.Object):
                 except (OSError, ValueError):
                     pass
         return {
-            "uuid": self.uuids.get(self.title, "") if self.xid else "",
+            "uuid": self.uuids.get(self.hold_title or self.title, "") if self.xid else "",
             "window": [w, h], "content": [cw, ch],
             "offsets": self.cfg["offsets"],
-            "view": self.view(), "ownView": str(wp) in (self.cfg.get("views") or {}),
+            "view": view, "wallpaperView": self.view(), "ownView": str(wp) in (self.cfg.get("views") or {}),
             "native": list(self.native_size() or []) or None,
             "muted": self.cfg["muted"], "volume": self.cfg["volume"],
             "paused": self.video_paused() if vfile else self.paused, "pauseReason": self.pause_reason, "manualPause": self.manual_pause,

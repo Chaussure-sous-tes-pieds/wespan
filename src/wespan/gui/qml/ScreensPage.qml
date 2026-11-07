@@ -15,11 +15,11 @@ Kirigami.ScrollablePage {
         target: backend
         function onStateChanged() {
             if (!dragging) page.offsets = JSON.parse(JSON.stringify(backend.state.offsets || {}));
-            if (!page.viewEditing) page.view = page.cleanView(backend.state.view);
+            if (!page.viewEditing) page.view = page.cleanView(backend.state.wallpaperView || backend.state.view);
         }
     }
     property bool dragging: false
-    Component.onCompleted: { offsets = JSON.parse(JSON.stringify(st.offsets || {})); view = cleanView(st.view); }
+    Component.onCompleted: { offsets = JSON.parse(JSON.stringify(st.offsets || {})); view = cleanView(st.wallpaperView || st.view); }
 
     // --- cadrage du fond affiché (copie locale, envoyée au service un instant après le dernier geste)
     property var view: cleanView(null)
@@ -63,7 +63,7 @@ Kirigami.ScrollablePage {
         if (needsNative(v) && st.native) {
             const k = Math.min(bw / st.native[0], bh / st.native[1]);
             cw = Math.floor(st.native[0] * k / 2) * 2; ch = Math.floor(st.native[1] * k / 2) * 2;
-        } else if (needsNative(st.view)) {
+        } else if (needsNative(st.wallpaperView || st.view)) {
             cw = bw; ch = bh;
         }
         const bcx = (x0 + x1) / 2, bcy = (y0 + y1) / 2;
@@ -253,7 +253,7 @@ Kirigami.ScrollablePage {
                     icon.name: "edit-undo"
                     text: page.t("Réinitialiser", "Reset")
                     enabled: !!page.st.ownView
-                    onClicked: { sendView.stop(); backend.setView(page.st.wallpaper || "", null); page.view = page.cleanView(page.st.view); }
+                    onClicked: { sendView.stop(); backend.setView(page.st.wallpaper || "", null); page.view = page.cleanView(page.st.wallpaperView || page.st.view); }
                 }
                 QQC2.Button {
                     icon.name: "edit-copy"

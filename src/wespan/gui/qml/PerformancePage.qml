@@ -59,9 +59,9 @@ Kirigami.ScrollablePage {
             Layout.maximumWidth: Kirigami.Units.gridUnit * 30
             wrapMode: Text.Wrap
             opacity: 0.7
-            text: page.t("Il ne sert à rien pour une vidéo : il est fermé au bout d'une minute (RAM et processeur "
+            text: page.t("Il ne sert à rien pour une vidéo : il est fermé au bout de 5 minutes (RAM et processeur "
                        + "libérés) et relancé tout seul si vous choisissez une scène.",
-                         "It isn't needed for a video: it's closed after a minute (frees RAM and CPU) and started "
+                         "It isn't needed for a video: it's closed after 5 minutes (frees RAM and CPU) and started "
                        + "again automatically when you pick a scene.")
         }
 

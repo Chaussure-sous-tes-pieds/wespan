@@ -117,7 +117,7 @@ subscribe, so *Subscribe* opens the wallpaper's page in Steam; once Steam has do
 Your wallpapers are the files Steam keeps in `steamapps/workshop/content/431960`. At login, the desktop shows
 the last frame of your scene right away (full size, on every screen) while Wallpaper Engine starts, then
 switches to the live animation; a video wallpaper starts playing immediately, as Plasma plays it by itself.
-For videos, Wallpaper Engine isn't needed at all: it's closed after a minute and started again when you pick a
+For videos, Wallpaper Engine isn't needed at all: it's closed after 5 minutes and started again when you pick a
 scene (*Performance*).
 
 ### Auto pause
@@ -295,7 +295,7 @@ ensuite **WE Span** depuis le menu. Mise à jour : `git pull && ./install.sh`. D
   dans Steam, et il apparaît dans *Fonds d'écran* une fois téléchargé.
 - Au démarrage de la session, le bureau affiche tout de suite la dernière image de la scène, en attendant
   Wallpaper Engine ; une vidéo démarre immédiatement (Plasma la lit seul). Pour une vidéo, Wallpaper Engine est
-  fermé au bout d'une minute, puis relancé si vous choisissez une scène (*Performances*).
+  fermé au bout de 5 minutes, puis relancé si vous choisissez une scène (*Performances*).
 - Langue : français ou anglais, proposée au premier lancement et modifiable en bas du menu latéral.
 - Ligne de commande : `wespan status`, `wespan set <id>`, `wespan mute`, `wespan volume 40`, `wespan pause`,
   `wespan offset HDMI-A-1 0 40`, `wespan restart`, `wespan doctor`.
